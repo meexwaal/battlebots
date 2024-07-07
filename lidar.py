@@ -31,6 +31,9 @@ class Lidar:
         self.prev_feedback = 0
         self.est_w = 0
         self.est_theta = 0
+        self.bad_est_count = 0
+        self.avg_feedback = 0.01
+        self.locked = False
 
         # Maintain a history of sensed points and the alignment of vectors
         hist_len = 20
@@ -110,17 +113,25 @@ class Lidar:
 
         return self.lidar_sensor.step(truth_dist, dt)
 
-    def align_alg(self, truth_x, truth_y, truth_theta, dt):
+    def align_alg(self, truth_x, truth_y, truth_theta, dt, sense_w=None):
         "Estimates theta and w using lidar, trying to align edges to horizontal and vertical"
 
         # todo:
-        # incorporate external w estimate, e.g. from accelerometer
         # incorporate position estimate
 
         # Measure distance at the true angle
         d = self.measure(truth_x, truth_y, truth_theta, dt)
         if d is None:
             return
+
+        # Trust the sensed angular rate, but only within a few percent
+        if sense_w is not None and abs(self.est_w - sense_w) > 0.05 * sense_w:
+            self.bad_est_count += 1
+        if self.bad_est_count > 100:
+            print(f"Lidar resetting est_w ({self.est_w:.3f}) to match accel ({sense_w:.3f})")
+            self.est_w = sense_w
+            self.integrator = 0
+            self.bad_est_count = 0
 
         # Calc point at the sensed angle
         # TODO: add position estimate here
@@ -155,17 +166,24 @@ class Lidar:
         derivative = (feedback - self.prev_feedback) / dt
         self.prev_feedback = feedback
 
-        #print(f"P: {self.kp * feedback:.5f} I: {self.ki * self.integrator:.5f} "
-        #      f"D: {self.kd * derivative:.5f}")
-        self.est_w += self.kp * feedback + self.ki * self.integrator + self.kd * derivative
+        # print(f"est_w: {self.est_w} "
+        #       f"P: {self.kp * feedback:.5f} I: {self.ki * self.integrator:.5f} "
+        #       f"D: {self.kd * derivative:.5f}")
+        est_w_delta = self.kp * feedback + self.ki * self.integrator + self.kd * derivative
+        self.est_w += est_w_delta
+
+        self.avg_feedback = alpha_filter(0.002, self.avg_feedback, est_w_delta)
+        # print(self.avg_feedback)
+        if abs(self.avg_feedback) < 0.001 and not self.locked:
+            self.locked = True
+            print("Lidar locked")
+        if abs(self.avg_feedback) > 0.005 and self.locked:
+            self.locked = False
+            print("Lidar unlocked")
 
         self.est_theta += self.est_w * dt
         self.est_theta = np.fmod(self.est_theta, 2 * np.pi)
 
-
-        # todo: hack because this all breaks if est_w is really bad
-        if abs(self.est_w) < 1:
-            self.est_w = np.random.choice([-1,1])
 
     # TODO: calculate position
     #   option 1: just measure it

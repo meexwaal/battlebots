@@ -152,7 +152,7 @@ class Melty:
 
         self.sense_accel()
         self.sense_theta_prop()
-        self.lidar.align_alg(truth.x, truth.y, truth.theta, DT)
+        self.lidar.align_alg(truth.x, truth.y, truth.theta, DT, self.sense.w)
 
         f_px = self.get_motor_torque(self.motor_px_level) / self.wheel_radius
         f_nx = self.get_motor_torque(self.motor_nx_level) / self.wheel_radius
@@ -185,9 +185,6 @@ class Melty:
 def gen_spin_up(bot, threshold=0.9):
     "Generator function. Spin bot up to threshold * max rotation speed."
 
-    bot.set_max_rotation_rate()
-    bot.lidar.est_w = bot.truth.w * 0.98
-
     bot.set_motor_levels(1, 1)
     t = 0
     while bot.truth.w < threshold * bot.max_w:
@@ -198,6 +195,13 @@ def gen_spin_up(bot, threshold=0.9):
 
     print(f"{t:.3f} s to spin up to speed")
 
+def skip_spin_up(bot):
+    "Generator function. Skip to the end of spinning the bot up to speed."
+
+    bot.set_max_rotation_rate()
+    bot.lidar.est_w = bot.truth.w * 0.98
+    yield
+
 def gen_translate(bot, arena_theta, distance, tolerance=0.01):
     "Generator function. Control the bot to translate a given distance in a given direction."
     xf = bot.truth.x + distance * np.cos(arena_theta)
@@ -207,7 +211,10 @@ def gen_translate(bot, arena_theta, distance, tolerance=0.01):
 
     t = 0
     while (np.abs(bot.truth.x - xf) > tolerance) or (np.abs(bot.truth.y - yf) > tolerance):
-        if angle_diff(bot.sense.theta, arena_theta) < 0:
+        # Use accel sense value
+        # if angle_diff(bot.sense.theta, arena_theta) < 0:
+        # Use lidar estimated theta
+        if angle_diff(bot.lidar.est_theta, arena_theta) < 0:
             bot.set_motor_levels(1, 0)
         else:
             bot.set_motor_levels(0, 1)
@@ -232,6 +239,7 @@ def gen_main(bot):
 
     return itertools.chain(
         gen_spin_up(bot),
+        # skip_spin_up(bot),
         # gen_loop(bot),
         gen_translate(bot, 0, 1),
         # gen_translate(bot, 0.2, 1),
@@ -326,12 +334,12 @@ def animate(save=False):
     ani = FuncAnimation(
         fig,
         update, init_func=init,
-        frames=5000,
+        # frames=5000,
         blit=True, repeat=False,
 
         # Set how fast the animation plays
-        # interval=1
-        interval=40
+        interval=1
+        # interval=40
         # interval=300
     )
 
