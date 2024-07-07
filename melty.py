@@ -294,12 +294,16 @@ def animate(save=False):
         # orientation.set_data(
         #     [bx + 0.9 * bot.radius * np.cos(err_theta)],
         #     [by + 0.9 * bot.radius * np.sin(err_theta)])
-        # Plot true and estimated theta
+        # Plot true and estimated theta, and lidar estimated position
         orientation.set_data(
             [bx + 0.9 * bot.radius * np.cos(btheta),
-             bx + 1.1 * bot.radius * np.cos(bot.lidar.est_theta)],
+             bx + 1.1 * bot.radius * np.cos(bot.lidar.est_theta),
+             bot.lidar.est_x,
+            ],
             [by + 0.9 * bot.radius * np.sin(btheta),
-             by + 1.1 * bot.radius * np.sin(bot.lidar.est_theta)])
+             by + 1.1 * bot.radius * np.sin(bot.lidar.est_theta),
+             bot.lidar.est_y,
+            ])
 
         xlog.append(bx)
         ylog.append(by)
