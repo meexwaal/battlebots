@@ -1,5 +1,8 @@
 #pragma once
 
+volatile size_t lidar_success = 0;
+volatile size_t lidar_bytes = 0;
+
 /*
  * Receive from the lidar.
  * If commandType != 0, check that the command is the given type.
@@ -11,30 +14,31 @@ bool lidarReceive(
     bool success = true;
 
     if (Serial1.available() == 512) {
-        Serial.println("Serial1 likely overflowed");
+        log("Serial1 likely overflowed");
     }
 
     size_t num_read = Serial1.readBytes(response, responseLen);
+    lidar_bytes += num_read;
     if (num_read != responseLen) {
-        Serial.println("Lidar didn't respond with all bytes");
+        log("Lidar didn't respond with all bytes");
         success = false;
     }
 
     if (response[0] != 0xAA || response[1] != 0x55) {
-        Serial.println("Lidar response bad packet header");
+        log("Lidar response bad packet header");
         success = false;
     }
 
     if (commandType != 0 && response[2] != commandType) {
-        Serial.println("Lidar response bad command type");
+        log("Lidar response bad command type");
         success = false;
     }
 
     if (response[3] != responseLen - 5) {
-        Serial.print("Lidar response bad length. Got ");
-        Serial.print(response[3]);
-        Serial.print(", expected ");
-        Serial.println(responseLen - 5);
+        log("Lidar response bad length. Got ");
+        /* Serial.print(response[3]); */ // todo
+        /* Serial.print(", expected "); */
+        /* Serial.println(responseLen - 5); */
         success = false;
     }
 
@@ -43,14 +47,91 @@ bool lidarReceive(
         checksum += response[i];
     }
     if (checksum != response[responseLen-1]) {
-        Serial.print("Lidar checksum mismatch. Maybe serial buffer overflow? Got ");
-        Serial.print(response[responseLen-1]);
-        Serial.print(", expected ");
-        Serial.println(checksum);
-        for (size_t i = 0; i < responseLen; i++) {
-            Serial.println(response[i], HEX);
-        }
+        log("Lidar checksum mismatch. Maybe serial buffer overflow? Got ");
+        /* Serial.print(response[responseLen-1]); */ // todo
+        /* Serial.print(", expected "); */
+        /* Serial.println(checksum); */
+        /* for (size_t i = 0; i < responseLen; i++) { */
+        /*     Serial.println(response[i], HEX); */
+        /* } */
         success = false;
+    }
+
+    return success;
+}
+
+/*
+ * More robust receive from the lidar.
+ */
+bool lidarReceiveRobust(
+    byte response[], const size_t responseLen,
+    const byte commandType
+    ) {
+    bool success = true;
+
+    if (Serial1.available() == 512) {
+        log("Serial1 likely overflowed");
+    }
+
+    //todo something is wrong, lidar measures are super noisy
+
+    // Find header
+    while (true) {
+        if (Serial1.available() < responseLen) {
+            return false;
+        }
+
+        /*
+         * Check if the next 2 bytes are the header.
+         * Note: making use of boolean short-circuiting to avoid missing the
+         * header in the case where the buffer is "<bad byte> 0xAA 0x55 ...".
+         */
+        // todo: if (Serial1.read() == 0xAA && Serial1.read() == 0x55) {
+        if ((lidar_bytes++,Serial1.read()) == 0xAA && (lidar_bytes++,Serial1.read()) == 0x55) {
+            break;
+        } else {
+            log("Warning: had to drop data"); // todo don't spam
+        }
+    }
+
+    const size_t bodyLen = responseLen - 2;
+    size_t num_read = Serial1.readBytes(response, bodyLen);
+    lidar_bytes += num_read;
+    if (num_read != bodyLen) {
+        log("Lidar didn't respond with all bytes");
+        success = false;
+    }
+
+    if (response[0] != commandType) {
+        log("Lidar response bad command type");
+        success = false;
+    }
+
+    if (response[1] != responseLen - 5) {
+        log("Lidar response bad length. Got ");
+        /* Serial.print(response[1]); */ // todo
+        /* Serial.print(", expected "); */
+        /* Serial.println(responseLen - 5); */
+        success = false;
+    }
+
+    byte checksum = 0xAA + 0x55;
+    for (size_t i = 0; i < bodyLen - 1; i++) {
+        checksum += response[i];
+    }
+    if (checksum != response[bodyLen - 1]) {
+        log("Lidar checksum mismatch. Maybe serial buffer overflow? Got ");
+        /* Serial.print(response[bodyLen - 1]); */ // todo
+        /* Serial.print(", expected "); */
+        /* Serial.println(checksum); */
+        /* for (size_t i = 0; i < bodyLen; i++) { */
+        /*     Serial.println(response[i], HEX); */
+        /* } */
+        success = false;
+    }
+
+    if (success) {
+        lidar_success++;
     }
 
     return success;
@@ -105,7 +186,12 @@ bool lidarSelfTest() {
  */
 bool lidarSetFreq() {
     Serial.println("Setting freq");
-    byte cmd[5] = {0xAA, 0x55, 0x64, 0x01, 0x05};
+    byte cmd[5] = {0xAA, 0x55, 0x64, 0x01, 0x05}; // todo
+    /* byte cmd[5] = {0xAA, 0x55, 0x64, 0x01, 0x01}; */
+    /*
+                0x00  0x01  0x02  0x03   0x04   0x05
+       ScanFreq 10Hz 100Hz 200Hz 500Hz 1000Hz 1800Hz
+    */
     byte response[6];
     return lidarSend(cmd, sizeof(cmd), response, sizeof(response));
 }
@@ -130,7 +216,7 @@ bool lidarStartScan() {
 bool lidarMeasure(uint16_t &out) {
     const size_t response_bytes = 9;
     uint16_t response[(response_bytes + 1) / 2];
-    bool success = lidarReceive(reinterpret_cast<byte*>(response), response_bytes, 0x60);
+    bool success = lidarReceiveRobust(reinterpret_cast<byte*>(response), response_bytes, 0x60);
 
     out = response[2];
 
