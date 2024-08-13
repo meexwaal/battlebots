@@ -13,6 +13,10 @@ bool lidarReceive(
     ) {
     bool success = true;
 
+    if (responseLen < 3 || response == NULL) {
+        return false;
+    }
+
     if (Serial1.available() == 512) {
         log("Serial1 likely overflowed");
     }
@@ -69,11 +73,13 @@ bool lidarReceiveRobust(
     ) {
     bool success = true;
 
+    if (responseLen < 3 || response == NULL) {
+        return false;
+    }
+
     if (Serial1.available() == 512) {
         log("Serial1 likely overflowed");
     }
-
-    //todo something is wrong, lidar measures are super noisy
 
     // Find header
     while (true) {
@@ -94,22 +100,26 @@ bool lidarReceiveRobust(
         }
     }
 
+    // Fill in the header of the response
+    response[0] = 0xAA;
+    response[1] = 0x55;
+    byte *body_buf = response + 2;
     const size_t bodyLen = responseLen - 2;
-    size_t num_read = Serial1.readBytes(response, bodyLen);
+    size_t num_read = Serial1.readBytes(body_buf, bodyLen);
     lidar_bytes += num_read;
     if (num_read != bodyLen) {
         log("Lidar didn't respond with all bytes");
         success = false;
     }
 
-    if (response[0] != commandType) {
+    if (body_buf[0] != commandType) {
         log("Lidar response bad command type");
         success = false;
     }
 
-    if (response[1] != responseLen - 5) {
+    if (body_buf[1] != responseLen - 5) {
         log("Lidar response bad length. Got ");
-        /* Serial.print(response[1]); */ // todo
+        /* Serial.print(body_buf[1]); */ // todo
         /* Serial.print(", expected "); */
         /* Serial.println(responseLen - 5); */
         success = false;
@@ -117,21 +127,17 @@ bool lidarReceiveRobust(
 
     byte checksum = 0xAA + 0x55;
     for (size_t i = 0; i < bodyLen - 1; i++) {
-        checksum += response[i];
+        checksum += body_buf[i];
     }
-    if (checksum != response[bodyLen - 1]) {
+    if (checksum != body_buf[bodyLen - 1]) {
         log("Lidar checksum mismatch. Maybe serial buffer overflow? Got ");
-        /* Serial.print(response[bodyLen - 1]); */ // todo
+        /* Serial.print(body_buf[bodyLen - 1]); */ // todo
         /* Serial.print(", expected "); */
         /* Serial.println(checksum); */
         /* for (size_t i = 0; i < bodyLen; i++) { */
-        /*     Serial.println(response[i], HEX); */
+        /*     Serial.println(body_buf[i], HEX); */
         /* } */
         success = false;
-    }
-
-    if (success) {
-        lidar_success++;
     }
 
     return success;
@@ -186,12 +192,13 @@ bool lidarSelfTest() {
  */
 bool lidarSetFreq() {
     Serial.println("Setting freq");
-    byte cmd[5] = {0xAA, 0x55, 0x64, 0x01, 0x05}; // todo
+    byte cmd[5] = {0xAA, 0x55, 0x64, 0x01, 0x03}; // todo
     /* byte cmd[5] = {0xAA, 0x55, 0x64, 0x01, 0x01}; */
     /*
-                0x00  0x01  0x02  0x03   0x04   0x05
-       ScanFreq 10Hz 100Hz 200Hz 500Hz 1000Hz 1800Hz
-    */
+     *            0x00  0x01  0x02  0x03   0x04   0x05
+     * Data sheet 10Hz 100Hz 200Hz 500Hz 1000Hz 1800Hz
+     * Measured   50Hz 400Hz 800Hz 2000 ~3950Hz 2200Hz
+     */
     byte response[6];
     return lidarSend(cmd, sizeof(cmd), response, sizeof(response));
 }
@@ -220,6 +227,10 @@ bool lidarMeasure(uint16_t &out) {
 
     out = response[2];
 
+    if (success) {
+        lidar_success++;
+    }
+
     return success;
 }
 
@@ -240,4 +251,11 @@ bool lidarIdle() {
         success = false;
     }
     return success;
+}
+
+bool lidarFactoryReset() {
+    Serial.println("Lidar factory reset");
+    byte cmd[4] = {0xAA, 0x55, 0x68, 0x00};
+    byte response[5];
+    return lidarSend(cmd, sizeof(cmd), response, sizeof(response));
 }
