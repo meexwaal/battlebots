@@ -1,12 +1,30 @@
+/*
+ * Note: I had to modify
+ * ~/.arduino15/packages/arduino/hardware/renesas_uno/1.2.0/cores/arduino/IRQManager.cpp
+ * to set UART_SCI_PRIORITY = 6, less than TIMER_PRIORITY, so that Serial can interrupt our
+ * timer-driver fast loop.
+ * TODO: set up a timer interrupt with lower priority in a less hacky way. Some notes below.
+ */
+
 #include "ArduinoGraphics.h"
 #include "Arduino_LED_Matrix.h"
 #include <WiFiS3.h>
 #include "FspTimer.h"
+#include "pwm.h"
 
 char * volatile debug_str = "ok";
+volatile bool debug_set = false;
 void log(char *str) {
     // Serial.println(str);
-    debug_str = str;
+    if (!debug_set) {
+        debug_str = str;
+        debug_set = true;
+    }
+}
+void printlog() {
+    Serial.println(debug_str);
+    debug_str = "ok";
+    debug_set = false;
 }
 
 #include "lidar.h"
@@ -15,6 +33,7 @@ void log(char *str) {
 
 ArduinoLEDMatrix matrix;
 FspTimer isr_timer;
+PwmOut pwm(D2);
 
 volatile size_t isr_count = 0;
 
@@ -26,6 +45,8 @@ volatile size_t lidar_idx = 0;
 std::array<volatile uint16_t, 1024> dists;
 
 static constexpr bool lidar_en = true;
+
+size_t start_millis = 0;
 
 template <typename unused_t>
 void isr(unused_t unused) {
@@ -42,7 +63,7 @@ void isr(unused_t unused) {
     isr_count++;
     // delayMicroseconds(100);
 
-    int max_reads = 10;
+    int max_reads = 5;
     if (lidar_en) {
         while (max_reads > 0 && Serial1.available() >= 9) {
             max_reads--;
@@ -94,9 +115,31 @@ bool beginTimer(float rate) {
   return true;
 }
 
+volatile float pwm_duty = 0;
+volatile size_t last_pwm_rise_us = 0;
+volatile size_t last_pwm_fall_us = 0;
+void measure_pwm() {
+    const size_t now = micros();
+    if (digitalRead(D3) == HIGH) {
+        const size_t last_period = now - last_pwm_rise_us;
+        pwm_duty = static_cast<float>(last_pwm_fall_us - last_pwm_rise_us) / last_period;
+        last_pwm_rise_us = now;
+    } else {
+        last_pwm_fall_us = now;
+    }
+}
+
 void setup() {
     pinMode(13, OUTPUT);
     digitalWrite(13, HIGH);
+
+    pwm.begin(1000.0f, 0.0f);
+    pwm.pulse_perc(42.7f);
+    /*
+     * also: period(int ms), pulseWidth(int ms), same with _us suffix
+     */
+
+    attachInterrupt(digitalPinToInterrupt(D3), measure_pwm, CHANGE);
 
     Serial.begin(460800);
     Serial1.begin(460800);
@@ -110,6 +153,10 @@ void setup() {
             Serial.println("Lidar failed to idle, trying again");
             delay(1000);
         };
+
+        /* delay(1000); */
+        /* Serial.println(lidarFactoryReset()); */
+        /* while(true); */
 
         if (!(
                 lidarSelfTest() &&
@@ -127,6 +174,8 @@ void setup() {
     if (!beginTimer(500)) {
         Serial.println("Timer failed init");
     };
+
+    start_millis = millis();
 }
 
 // constexpr unsigned long CYCLE_DT_US = 2000; // 500 Hz
@@ -175,8 +224,26 @@ void sleep_until_cycle_start() {
 }
 
 void loop() {
+
     cycle_count++;
     sleep_until_cycle_start();
+
+    /* int max_reads = 1000; */
+    /* if (lidar_en) { */
+    /*     while (max_reads > 0 && Serial1.available() >= 9) { */
+    /*         max_reads--; */
+    /*         uint16_t m = -1; */
+    /*         const bool success = lidarMeasure(m); */
+    /*         if (success) { */
+    /*             dists[lidar_idx] = m; */
+    /*             lidar_idx++; */
+    /*             if (lidar_idx >= dists.size()) { */
+    /*                 lidar_idx = 0; */
+    /*             } */
+    /*         } */
+    /*     } */
+    /* } */
+
 
     Serial.println("");
     Serial.print("Cycle #        : ");
@@ -194,7 +261,7 @@ void loop() {
     max_duration = 0;
 
     /* for (int i = 0; i < 8; i++) { */
-        /* Serial.println(telem_packet.lidar_mm[i]); */
+    /*     Serial.println(telem_packet.lidar_mm[i]); */
     /* } */
 
     uint32_t sum = 0;
@@ -214,19 +281,28 @@ void loop() {
     Serial.println(mean);
     Serial.print("std  ");
     Serial.println(std);
+
     Serial.print("lidar_idx ");
     /* Serial.println(lidar_idx); */
     /* for (int i = 0; i < lidar_idx; i++) { */
     /*     Serial.println(dists[i]); */
     /* } */
 
-    Serial.println(debug_str);
-    debug_str = "ok";
+    printlog();
 
-    Serial.print("Lidar rate ");
+    Serial.print("Lidar success rate ");
     Serial.println(9.0 * lidar_success / lidar_bytes);
 
-    // telemeter();
+    Serial.print("Lidar rate Hz ");
+    Serial.println(1000.0 * lidar_success / (millis() - start_millis));
+
+    Serial.print("ISR rate Hz ");
+    Serial.println(1000.0 * isr_count / (millis() - start_millis));
+
+    Serial.print("PWM duty ");
+    Serial.println(pwm_duty);
+
+    telemeter();
 }
 
 /*
@@ -278,30 +354,22 @@ myservo.write(val);
 */
 
 /*
- * TODO: follow up on why Serial.print doesn't work in the interrupt.
+ * TODO: follow up on how to properly set the priority of the fast loop interrupt.
+ * Originally why Serial.print doesn't work in the interrupt.
  * Useful reading:
  * https://forum.arduino.cc/t/the-renesas-users-manual-and-fsp-the-deep-magic-for-r4/1179100/4
  * https://www.renesas.com/us/en/document/mah/renesas-ra4m1-group-users-manual-hardware?r=1054146
  * https://forum.arduino.cc/t/uno-r4-attachinterrupt/1148214/9
  * https://www.pschatzmann.ch/home/2023/07/01/under-the-hood-arduino-uno-r4-timers/
  * https://github.com/arduino/ArduinoCore-renesas/blob/149f78b6490ccbafeb420f68919c381a5bdb6e21/cores/arduino/FspTimer.cpp
+ * https://forum.arduino.cc/t/ra4m1-interrupts/1179222
  *
- * Some observations:
+ * This answer clarified things for me, it's about priority
+ * https://stackoverflow.com/questions/21637541/how-to-re-enable-interrupts-from-within-an-interrupt-handler-on-arm-cortex-m3
+ * How do I set the priority?
+ * Aha! This post solves exactly my problem, but in a hacky way:
+ * https://forum.arduino.cc/t/serial-print-from-isr-will-hang/1145292/5
  *
- * noInterrupts() in ISR will prevent it from firing again
- * but interrupts() will not let it be re-entered
- * delay() works in an isr, but it hangs if I call noInterrupts() first
- * takeaway:
- *   noInterrupts() will block interrupts from running, but there's something else Also blocking?
- *   like an "I'm in an ISR" register
- *   explains why print fails and why function can't reenter
- *   doesn't totally explain why delay works. maybe it's a higher priority?
- *
- *
- * wifi send interruptability:
- *  at 500 Hz interrupts, if ISR delays for 200 us, seeing some long delays between packets
- *  even with low wifi period, 5 Hz
- *  delay is ~10 s. I wonder if it's hitting some retry logic
- *  not dropping packets though
- *  at 100 us delay in the ISR (500 Hz), wifi is ok
+ * Some thoughts on faster serial comms:
+ * https://github.com/arduino/ArduinoCore-renesas/issues/44
  */
