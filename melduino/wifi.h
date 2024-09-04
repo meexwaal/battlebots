@@ -24,35 +24,27 @@ void printWifiStatus() {
 }
 
 bool wifiSetup() {
-
-    // check for the WiFi module:
     if (WiFi.status() == WL_NO_MODULE) {
         Serial.println("Communication with WiFi module failed!");
-        // don't continue
-        while (true);
+        return false;
     }
 
     String fv = WiFi.firmwareVersion();
     if (fv < WIFI_FIRMWARE_LATEST_VERSION) {
-        Serial.println("Please upgrade the firmware");
+        Serial.println("Please upgrade the wifi firmware");
     }
 
     WiFi.config(IPAddress(192,168,4,1));
 
-    // Create open network. Change this line if you want to create an WEP network:
     int status = WiFi.beginAP(WIFI_SSID, WIFI_PASSWORD);
     if (status != WL_AP_LISTENING) {
         Serial.println("Creating access point failed");
-        // don't continue
-        while (true);
+        return false;
     }
 
     Serial.println("Created WiFi");
     printWifiStatus();
 
     Serial.println("\nStarting connection to server...");
-    // if you get a connection, report back via serial:
-    Udp.begin(localPort);
-
-    return true;
+    return Udp.begin(localPort);
 }

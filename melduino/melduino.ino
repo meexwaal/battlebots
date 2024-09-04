@@ -7,7 +7,6 @@
  */
 
 #include "ArduinoGraphics.h"
-#include "Arduino_LED_Matrix.h"
 #include <WiFiS3.h>
 #include "FspTimer.h"
 #include "pwm.h"
@@ -27,13 +26,18 @@ void printlog() {
     debug_set = false;
 }
 
+#include "led_matrix.h"
 #include "lidar.h"
 #include "wifi.h"
 #include "protocol.h"
 
-ArduinoLEDMatrix matrix;
 FspTimer isr_timer;
 PwmOut pwm(D2);
+
+volatile bool has_lidar = false;
+volatile bool has_accel = false;
+volatile bool has_gyro = false;
+volatile bool has_wifi = false;
 
 volatile size_t isr_count = 0;
 
@@ -43,8 +47,6 @@ volatile size_t max_duration = 0;
 
 volatile size_t lidar_idx = 0;
 std::array<volatile uint16_t, 1024> dists;
-
-static constexpr bool lidar_en = true;
 
 size_t start_millis = 0;
 
@@ -58,13 +60,13 @@ void isr(unused_t unused) {
     }
 
     // Blink the light to show that ISR is running
-    digitalWrite(13, (isr_count & (1 << 6)) == 0);
+    digitalWrite(LED_BUILTIN, (isr_count & (1 << 6)) == 0);
 
     isr_count++;
     // delayMicroseconds(100);
 
     int max_reads = 5;
-    if (lidar_en) {
+    if (has_lidar) {
         while (max_reads > 0 && Serial1.available() >= 9) {
             max_reads--;
             uint16_t m = -1;
@@ -129,61 +131,84 @@ void measure_pwm() {
     }
 }
 
+constexpr unsigned int FAST_CYCLE_HZ = 500;
+
+// constexpr unsigned long SLOW_CYCLE_DT_US = 20000; // 50 Hz
+constexpr unsigned long SLOW_CYCLE_DT_US = 50000; // 20 Hz
+// constexpr unsigned long SLOW_CYCLE_DT_US = 100000; // 10 Hz
+// constexpr unsigned long SLOW_CYCLE_DT_US = 200000; // 5 Hz
+
 void setup() {
-    pinMode(13, OUTPUT);
-    digitalWrite(13, HIGH);
-
-    pwm.begin(1000.0f, 0.0f);
-    pwm.pulse_perc(42.7f);
-    /*
-     * also: period(int ms), pulseWidth(int ms), same with _us suffix
-     */
-
-    attachInterrupt(digitalPinToInterrupt(D3), measure_pwm, CHANGE);
+    pinMode(LED_BUILTIN, OUTPUT);
+    digitalWrite(LED_BUILTIN, HIGH);
 
     Serial.begin(460800);
-    Serial1.begin(460800);
+    Serial.println("Starting init");
 
-    matrix.begin();
+    led_matrix_init();
 
-    wifiSetup();
-
-    if (lidar_en) {
-        while (!lidarIdle()) {
-            Serial.println("Lidar failed to idle, trying again");
-            delay(1000);
-        };
-
-        /* delay(1000); */
-        /* Serial.println(lidarFactoryReset()); */
-        /* while(true); */
-
-        if (!(
-                lidarSelfTest() &&
-                lidarSetFreq() &&
-                lidarSetFiltering(false) &&
-                lidarStartScan()
-                )) {
-            Serial.println("Lidar failed to init, giving up");
-            while (true);
-        }
-
-        Serial.println("Lidar ok");
+    // WiFi
+    led_print(led_msg::init | led_msg::wifi);
+    has_wifi = wifiSetup();
+    if (!has_wifi) {
+        Serial.println("WiFi failed to init");
     }
 
-    if (!beginTimer(500)) {
+    /* pwm.begin(1000.0f, 0.0f); */
+    /* pwm.pulse_perc(42.7f); */
+    /* /\* */
+    /*  * also: period(int ms), pulseWidth(int ms), same with _us suffix */
+    /*  *\/ */
+
+    /* attachInterrupt(digitalPinToInterrupt(D3), measure_pwm, CHANGE); */
+
+    // Lidar
+    led_print(led_msg::init | led_msg::lidar);
+    Serial1.begin(460800);
+    for (int i = 0; i < 5; i++)
+    {
+        // Lidar must be in idle before it accepts commands. Attempt a few times.
+        if (lidarIdle()) {
+            break;
+        }
+
+        Serial.println("Lidar failed to idle, trying again");
+        delay(50);
+    }
+
+    if (!(
+            lidarSelfTest() &&
+            lidarSetFreq() &&
+            lidarSetFiltering(false) &&
+            lidarStartScan()
+            )) {
+        Serial.println("Lidar failed to init");
+        has_lidar = false;
+    } else {
+        has_lidar = true;
+    }
+
+    led_print(led_msg::init | led_msg::timer);
+    if (!beginTimer(FAST_CYCLE_HZ)) {
         Serial.println("Timer failed init");
+
+        // We need the timer to run, so give up if it fails.
+        while (true);
     };
+
+    // Put some status on the LED matrix to show what failed init
+    Frame end_msg(led_msg::empty);
+    if (!has_wifi) {
+        end_msg |= led_msg::no | led_msg::wifi;
+    }
+    if (!has_lidar) {
+        end_msg |= led_msg::no | led_msg::lidar;
+    }
+    led_print(end_msg);
 
     start_millis = millis();
 }
 
-// constexpr unsigned long CYCLE_DT_US = 2000; // 500 Hz
-// constexpr unsigned long CYCLE_DT_US = 10000; // 100 Hz
-// constexpr unsigned long CYCLE_DT_US = 20000; // 50 Hz
-constexpr unsigned long CYCLE_DT_US = 50000; // 20 Hz
-// constexpr unsigned long CYCLE_DT_US = 100000; // 10 Hz
-// constexpr unsigned long CYCLE_DT_US = 200000; // 5 Hz
 unsigned long next_wakeup = 0;
 
 size_t cycle_count = 0;
@@ -213,14 +238,14 @@ void sleep_until_cycle_start() {
     if (sleep_us < 0) {
         late_wakeup_count++;
 
-        const size_t skipped_cycles = (-sleep_us) / CYCLE_DT_US;
+        const size_t skipped_cycles = (-sleep_us) / SLOW_CYCLE_DT_US;
         skipped_cycle_count += skipped_cycles;
 
         sleep_us = 0;
-        next_wakeup += skipped_cycles * CYCLE_DT_US;
+        next_wakeup += skipped_cycles * SLOW_CYCLE_DT_US;
     }
     delayMicroseconds(sleep_us);
-    next_wakeup += CYCLE_DT_US;
+    next_wakeup += SLOW_CYCLE_DT_US;
 }
 
 void loop() {
@@ -229,7 +254,7 @@ void loop() {
     sleep_until_cycle_start();
 
     /* int max_reads = 1000; */
-    /* if (lidar_en) { */
+    /* if (has_lidar) { */
     /*     while (max_reads > 0 && Serial1.available() >= 9) { */
     /*         max_reads--; */
     /*         uint16_t m = -1; */
@@ -302,22 +327,10 @@ void loop() {
     Serial.print("PWM duty ");
     Serial.println(pwm_duty);
 
-    telemeter();
+    if (has_wifi) {
+        telemeter();
+    }
 }
-
-/*
-
-
-  matrix.beginDraw();
-  matrix.stroke(0xFFFFFFFF);
-  char text[5];
-  snprintf(text, sizeof(text), "%f", std);
-  matrix.textFont(Font_4x6);
-  matrix.beginText(0, 1, 0xFFFFFF);
-  matrix.println(text);
-  matrix.endText();
-  matrix.endDraw();
-  }
 
 /* Initialize and drive a motor
 #include <Servo.h>
