@@ -27,6 +27,7 @@ namespace melty {
             }
         }
 
+        /* Convert a sparse_frame_t to a Frame */
         constexpr Frame(const sparse_frame_t &in) :
             f{0,0,0}
         {
@@ -36,6 +37,34 @@ namespace melty {
                 for (int col = 0; col < 12; col++) {
                     f[out_row] <<= 1;
                     f[out_row] |= in[row][col];
+                    out_col++;
+                    if (out_col >= 32) {
+                        out_row++;
+                        out_col = 0;
+                    }
+                }
+            }
+        }
+
+        /*
+         * Light up the (possibly-angled) half of the matrix which is in the
+         * same direction of a vector.
+         */
+        constexpr Frame(const float x, const float y) :
+            f{0,0,0}
+        {
+            size_t out_row = 0;
+            size_t out_col = 0;
+            for (int row = 0; row < 8; row++) {
+                const float mx = row - 3.5;
+                for (int col = 0; col < 12; col++) {
+                    const float my = col - 5.5;
+
+                    // Check dot product > 0 to know if this pixel is on the
+                    // same half as the vector
+                    const bool on = (mx * x + my * y) > 0;
+                    f[out_row] <<= 1;
+                    f[out_row] |= on;
                     out_col++;
                     if (out_col >= 32) {
                         out_row++;
@@ -145,6 +174,14 @@ namespace melty {
 
     void led_print(const Frame &msg) {
         matrix.loadFrame(msg.f);
+    }
+
+    /*
+     * Light up the (possibly-angled) half of the matrix which is in the same
+     * direction of a vector.
+     */
+    void led_vector(const float x, const float y) {
+        matrix.loadFrame(Frame(x, y).f);
     }
 
     void led_matrix_init() {

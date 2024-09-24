@@ -2,7 +2,7 @@
  * Notes on setup:
  *
  * Install libraries:
- *  - Adafruit ICM20649 (1.0.4)
+ *  - Adafruit ICM20X (2.0.7)
  *  - Adafruit LIS331 (1.0.6)
  *
  * I also had to modify
@@ -17,6 +17,7 @@
 
 #include "common.h"
 
+#include "imu.h"
 #include "led_matrix.h"
 #include "lidar.h"
 #include "motor.h"
@@ -27,6 +28,7 @@ namespace melty {
 
     FspTimer isr_timer;
     PwmOut pwm(D2);
+    NavState nav_state{};
 
     volatile bool has_lidar = false;
     volatile bool has_accel = false;
@@ -232,6 +234,14 @@ void setup() {
         has_lidar = true;
     }
 
+    // Nav sensors, IMU
+    // led_print(led_msg::init | led_msg::nav); todo
+    const bool has_nav = nav_state.init();
+    if (!has_nav) {
+        Serial.println("Nav init failure");
+    }
+
+    // Timer interrupt for fast loop
     led_print(led_msg::init | led_msg::timer);
     if (!beginTimer(FAST_CYCLE_HZ)) {
         Serial.println("Timer failed init");
@@ -250,6 +260,9 @@ void setup() {
     }
     if (!has_lidar) {
         end_msg |= led_msg::no | led_msg::lidar;
+    }
+    if (!has_nav) {
+        /* end_msg |= led_msg::no | led_msg::nav; */ // todo
     }
     led_print(end_msg);
 
@@ -278,20 +291,20 @@ void loop() {
     /* } */
 
 
-    Serial.println("");
-    Serial.print("Cycle #        : ");
-    Serial.println(cycle_count);
-    Serial.print("Late wakeups   : ");
-    Serial.println(late_wakeup_count);
-    Serial.print("Skipped cycles : ");
-    Serial.println(skipped_cycle_count);
+    /* Serial.println(""); */
+    /* Serial.print("Cycle #        : "); */
+    /* Serial.println(cycle_count); */
+    /* Serial.print("Late wakeups   : "); */
+    /* Serial.println(late_wakeup_count); */
+    /* Serial.print("Skipped cycles : "); */
+    /* Serial.println(skipped_cycle_count); */
 
-    Serial.print("Max ISR period : ");
-    Serial.println(max_period);
-    max_period = 0;
-    Serial.print("Max ISR dur.   : ");
-    Serial.println(max_duration);
-    max_duration = 0;
+    /* Serial.print("Max ISR period : "); */
+    /* Serial.println(max_period); */
+    /* max_period = 0; */
+    /* Serial.print("Max ISR dur.   : "); */
+    /* Serial.println(max_duration); */
+    /* max_duration = 0; */
 
     /* for (int i = 0; i < 8; i++) { */
     /*     Serial.println(telem_packet.lidar_mm[i]); */
@@ -310,32 +323,43 @@ void loop() {
     }
     float std = std::sqrt(std_sum / dists.size());
 
-    Serial.print("mean ");
-    Serial.println(mean);
-    Serial.print("std  ");
-    Serial.println(std);
+    /* Serial.print("mean "); */
+    /* Serial.println(mean); */
+    /* Serial.print("std  "); */
+    /* Serial.println(std); */
 
-    Serial.print("lidar_idx ");
+    /* Serial.print("lidar_idx "); */
     /* Serial.println(lidar_idx); */
     /* for (int i = 0; i < lidar_idx; i++) { */
     /*     Serial.println(dists[i]); */
     /* } */
 
-    printlog();
+    /* printlog(); */
 
-    Serial.print("Lidar success rate ");
-    Serial.println(9.0 * lidar_success / lidar_bytes);
+    /* Serial.print("Lidar success rate "); */
+    /* Serial.println(9.0 * lidar_success / lidar_bytes); */
 
-    Serial.print("Lidar rate Hz ");
-    Serial.println(1000.0 * lidar_success / (millis() - start_millis));
+    /* Serial.print("Lidar rate Hz "); */
+    /* Serial.println(1000.0 * lidar_success / (millis() - start_millis)); */
 
-    Serial.print("ISR rate Hz ");
-    Serial.println(1000.0 * isr_count / (millis() - start_millis));
+    /* Serial.print("ISR rate Hz "); */
+    /* Serial.println(1000.0 * isr_count / (millis() - start_millis)); */
 
-    Serial.print("PWM duty ");
-    Serial.println(pwm_duty);
+    /* Serial.print("PWM duty "); */
+    /* Serial.println(pwm_duty); */
 
     if (has_wifi) {
         telemeter();
+    }
+
+    nav_state.step();
+    const float theta = -nav_state.theta;
+    led_vector(cos(theta), sin(theta));
+
+    const size_t uptime = millis() - start_millis;
+    if (uptime > 4000) {
+        set_motors(70, 70);
+    } else if (uptime > 1000) {
+        set_motors(73, 73);
     }
 }

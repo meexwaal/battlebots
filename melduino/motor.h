@@ -15,11 +15,6 @@ namespace melty {
         // up trying to init.
         bool success = true;
 
-        // TODO: remove
-        Serial.println("Enter to start");
-        while (!Serial.available());
-        while (Serial.available()) Serial.read();
-
         /* if (!left_motor.attach(pins::left_motor, min_pulse_us, max_pulse_us)) { */
         if (!left_motor.attach(pins::left_motor)) {
             Serial.println("Left motor failed to attach");
@@ -41,36 +36,12 @@ namespace melty {
         Serial.println("hi");
         left_motor.write(hi);
         right_motor.write(hi);
-        /* while (!Serial.available()); */
-        /* while (Serial.available()) Serial.read(); */
         delay(5000); // 7000 for more beeps, they just keep going
+
         Serial.println("lo");
         left_motor.write(lo);
         right_motor.write(lo);
-        /* while (!Serial.available()); */
-        /* while (Serial.available()) Serial.read(); */
         delay(2000);
-
-        // TODO: remove
-        Serial.println("start");
-        left_motor.write(lo + 3);
-        right_motor.write(lo + 3);
-        delay(2000);
-        Serial.println("done");
-        left_motor.write(lo);
-        right_motor.write(lo);
-
-        while(true) {
-            if (Serial.available()) {
-                const int val = Serial.parseInt();
-                Serial.println(val);
-                if (lo <= val && val <= hi) {
-                    Serial.println("ok");
-                    left_motor.write(val);
-                    right_motor.write(val);
-                }
-            }
-        }
 
         return success;
     }
