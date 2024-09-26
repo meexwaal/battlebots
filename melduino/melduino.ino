@@ -358,8 +358,8 @@ void loop() {
 
     const size_t uptime = millis() - start_millis;
     if (uptime > 4000) {
-        set_motors(70, 70);
+        set_motors(0, 0);
     } else if (uptime > 1000) {
-        set_motors(73, 73);
+        set_motors(0.08, 0.08);
     }
 }

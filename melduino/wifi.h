@@ -1,7 +1,7 @@
 #pragma once
 
 #include <WiFiS3.h>
-#include "secrets.h"
+#include "secrets.h" // Create this file with #defines for WIFI_SSID and WIFI_PASSWORD
 
 namespace melty {
     constexpr unsigned int localPort = 2390;      // local port to listen on
@@ -38,7 +38,7 @@ namespace melty {
 
         WiFi.config(IPAddress(192,168,4,1));
 
-        int status = WiFi.beginAP(WIFI_SSID, WIFI_PASSWORD);
+        int status = WiFi.beginAP(WIFI_SSID, WIFI_PASSWORD); // #define these in secrets.h
         if (status != WL_AP_LISTENING) {
             Serial.println("Creating access point failed");
             return false;

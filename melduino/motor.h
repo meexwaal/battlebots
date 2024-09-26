@@ -4,54 +4,72 @@
 
 namespace melty {
 
+    // Found with guess and check
+    static constexpr size_t min_pulse_us = 1266;
+    static constexpr size_t max_pulse_us = 1678;
+
     Servo left_motor, right_motor;
 
     bool motor_init() {
-        // Found with guess and check
-        constexpr size_t min_pulse_us = 1250;
-        constexpr size_t max_pulse_us = 1650;
-
         // Flag failures in init so the main program can show them, but don't give
         // up trying to init.
         bool success = true;
 
-        /* if (!left_motor.attach(pins::left_motor, min_pulse_us, max_pulse_us)) { */
         if (!left_motor.attach(pins::left_motor)) {
             Serial.println("Left motor failed to attach");
             success = false;
         }
-        /* if (!right_motor.attach(pins::right_motor, min_pulse_us, max_pulse_us)) { */
         if (!right_motor.attach(pins::right_motor)) {
             Serial.println("Right motor failed to attach");
             success = false;
         }
 
-        /* int hi = 180; */
-        /* int lo = 0; */
-
-        int hi = 110;
-        int lo = 70;
-
         // ESC initialization sequence
-        Serial.println("hi");
-        left_motor.write(hi);
-        right_motor.write(hi);
+        Serial.println("Init motor: high duty cycle");
+        left_motor.writeMicroseconds(max_pulse_us);
+        right_motor.writeMicroseconds(max_pulse_us);
         delay(5000); // 7000 for more beeps, they just keep going
 
-        Serial.println("lo");
-        left_motor.write(lo);
-        right_motor.write(lo);
+        Serial.println("Init motor: low duty cycle");
+        left_motor.writeMicroseconds(min_pulse_us);
+        right_motor.writeMicroseconds(min_pulse_us);
         delay(2000);
+
+        Serial.println("Init motor: done");
 
         return success;
     }
 
 
     /*
-     * Set the motor speeds. Each can be from 0 (off) to 180 (max speed).
+     * Arduino's map, with floats.
+     * https://www.arduino.cc/reference/en/language/functions/math/map/
      */
-    void set_motors(const int left, const int right) {
-        left_motor.write(left);
-        right_motor.write(right);
+    float map_float(float x, float in_min, float in_max, float out_min, float out_max) {
+        return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+    }
+
+    /*
+     * Set the motor speeds. Each can be from 0 (off) to 1 (max speed).
+     */
+    void set_motors(float left, float right) {
+        constexpr float speed_limit = 0.1f; // TODO: remove limit
+
+        if (left < 0.0f || left > 1.0f) {
+            Serial.print("Error: bad left motor speed: ");
+            Serial.println(left);
+            left = 0.0f;
+        }
+        left = constrain(left, 0.0f, speed_limit);
+
+        if (right < 0.0f || right > 1.0f) {
+            Serial.print("Error: bad right motor speed: ");
+            Serial.println(right);
+            right = 0.0f;
+        }
+        right = constrain(right, 0.0f, speed_limit);
+
+        left_motor.writeMicroseconds(map_float(left, 0.0f, 1.0f, min_pulse_us, max_pulse_us));
+        right_motor.writeMicroseconds(map_float(right, 0.0f, 1.0f, min_pulse_us, max_pulse_us));
     }
 }
