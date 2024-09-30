@@ -4,6 +4,7 @@
  * Install libraries:
  *  - Adafruit ICM20X (2.0.7)
  *  - Adafruit LIS331 (1.0.6)
+ *  - ArduinoGraphics (1.1.3)
  *
  * I also had to modify
  * ~/.arduino15/packages/arduino/hardware/renesas_uno/1.2.0/cores/arduino/IRQManager.cpp
@@ -113,17 +114,26 @@ namespace melty {
       return true;
     }
 
-    volatile float pwm_duty = 0;
-    volatile size_t last_pwm_rise_us = 0;
-    volatile size_t last_pwm_fall_us = 0;
+    #define SPIN_CH1_PIN 2
+    #define NS_CH3_PIN 3
+    #define EW_CH4_PIN 8
+
+    volatile long start_times[3] = {};
+    volatile long current_times[3] = {};
+    volatile long pulses[3] = {};
+    volatile int pulse_widths[3] = {};
+
+    template <int idx>
     void measure_pwm() {
-        const size_t now = micros();
-        if (digitalRead(D3) == HIGH) {
-            const size_t last_period = now - last_pwm_rise_us;
-            pwm_duty = static_cast<float>(last_pwm_fall_us - last_pwm_rise_us) / last_period;
-            last_pwm_rise_us = now;
-        } else {
-            last_pwm_fall_us = now;
+        current_times[idx] = micros();
+
+        if (current_times[idx] > start_times[idx]) {
+          pulses[idx] = current_times[idx] - start_times[idx];
+          start_times[idx] = current_times[idx];
+        }
+
+        if (pulses[idx] < 2000) {
+          pulse_widths[idx] = pulses[idx];
         }
     }
 
@@ -178,6 +188,10 @@ namespace melty {
 using namespace melty;
 
 void setup() {
+    pinMode(SPIN_CH1_PIN, INPUT_PULLUP);
+    pinMode(NS_CH3_PIN, INPUT_PULLUP);
+    pinMode(EW_CH4_PIN, INPUT_PULLUP);
+
     pinMode(pins::status_led, OUTPUT);
     digitalWrite(pins::status_led, HIGH);
 
@@ -206,7 +220,9 @@ void setup() {
     /*  * also: period(int ms), pulseWidth(int ms), same with _us suffix */
     /*  *\/ */
 
-    /* attachInterrupt(digitalPinToInterrupt(D3), measure_pwm, CHANGE); */
+    attachInterrupt(digitalPinToInterrupt(SPIN_CH1_PIN), measure_pwm<0>, CHANGE);
+    attachInterrupt(digitalPinToInterrupt(NS_CH3_PIN), measure_pwm<1>, CHANGE);
+    attachInterrupt(digitalPinToInterrupt(EW_CH4_PIN), measure_pwm<2>, CHANGE);
 
     // Lidar
     led_print(led_msg::init | led_msg::lidar);
@@ -273,6 +289,16 @@ void loop() {
 
     cycle_count++;
     sleep_until_cycle_start();
+
+    Serial.print("SPIN_PIN:");
+    Serial.print(pulse_widths[0]);
+    Serial.print(",");
+    Serial.print("NS_PIN:");
+    Serial.print(pulse_widths[1]);
+    Serial.print(",");
+    Serial.print("EW_PIN:");
+    Serial.print(pulse_widths[2]);
+    Serial.println();
 
     /* int max_reads = 1000; */
     /* if (has_lidar) { */
@@ -356,10 +382,19 @@ void loop() {
     const float theta = -nav_state.theta;
     led_vector(cos(theta), sin(theta));
 
+    // 70 - 110, 90 is center
     const size_t uptime = millis() - start_millis;
-    if (uptime > 4000) {
-        set_motors(0, 0);
-    } else if (uptime > 1000) {
-        set_motors(0.08, 0.08);
+
+    if (uptime > 4000 && uptime < 30000) {
+      int spin_speed = map(pulse_widths[0], 1000, 2000, -0.08, 0.08);
+      set_motors(spin_speed, spin_speed);
+    } else {
+      set_motors(0, 0);
     }
+
+    // if (uptime > 4000) {
+    //     set_motors(70, 70);
+    // } else if (uptime > 1000) {
+    //     set_motors(73, 73);
+    // }
 }
