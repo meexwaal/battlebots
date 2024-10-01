@@ -44,7 +44,7 @@ namespace melty {
      * Set the motor speeds. Each can be from 0 (off) to 1 (max speed).
      */
     void set_motors(float left, float right) {
-        constexpr float speed_limit = 0.1f; // TODO: remove limit
+        constexpr float speed_limit = 0.08f; // TODO: remove limit
 
         if (left < 0.0f || left > 1.0f) {
             Serial.print("Error: bad left motor speed: ");

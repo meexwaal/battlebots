@@ -193,7 +193,7 @@ namespace melty {
      */
     bool lidarSetFreq() {
         Serial.println("Setting freq");
-        byte cmd[5] = {0xAA, 0x55, 0x64, 0x01, 0x03};
+        byte cmd[5] = {0xAA, 0x55, 0x64, 0x01, 0x02};
         /*
          *            0x00  0x01  0x02  0x03   0x04   0x05
          * Data sheet 10Hz 100Hz 200Hz 500Hz 1000Hz 1800Hz
