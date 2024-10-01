@@ -382,19 +382,12 @@ void loop() {
     const float theta = -nav_state.theta;
     led_vector(cos(theta), sin(theta));
 
-    // 70 - 110, 90 is center
     const size_t uptime = millis() - start_millis;
 
     if (uptime > 4000 && uptime < 30000) {
-      int spin_speed = map(pulse_widths[0], 1000, 2000, -0.08, 0.08);
-      set_motors(spin_speed, spin_speed);
+        const float spin_speed = map_float(pulse_widths[0], 1000, 2000, -0.08, 0.08);
+        set_motors(spin_speed, spin_speed);
     } else {
-      set_motors(0, 0);
+        set_motors(0, 0);
     }
-
-    // if (uptime > 4000) {
-    //     set_motors(70, 70);
-    // } else if (uptime > 1000) {
-    //     set_motors(73, 73);
-    // }
 }
