@@ -9,7 +9,7 @@ with open('protocol.h', 'r') as protocol_file:
 
 ServerSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 host = '0.0.0.0'
-port = 2390;
+port = 2390
 
 print("Start")
 try:
@@ -33,13 +33,14 @@ while True:
     # if count % 100 == 0:
     if count % 1 == 0:
         telem_struct = ffi.from_buffer("telem_packet_t *", telem_packet)
-        print(count)
+        # print(count)
+        print(f"{min(telem_struct.lidar_mm) / 1000} \t {max(telem_struct.lidar_mm) / 1000}")
         # for i in range(8):
         #     print(f"Lidar {i}: {telem_struct.lidar_mm[i]}")
         # print(f"late_wakeup {telem_struct.late_wakeup_count}")
         # print(f"skipped_cycle {telem_struct.skipped_cycle_count}")
-        packet_count = int(telem_struct.packet_count)
-        if packet_count != next_packet_count:
-            print(f"\n\nGot packet count {packet_count}, expected {next_packet_count}\n")
-        next_packet_count = (packet_count + 1) % 256;
-        print(f"{diff:.3f}, {worst_diff:.3f}")
+        # packet_count = int(telem_struct.packet_count)
+        # if packet_count != next_packet_count:
+        #     print(f"\n\nGot packet count {packet_count}, expected {next_packet_count}\n")
+        # next_packet_count = (packet_count + 1) % 256;
+        # print(f"{diff:.3f}, {worst_diff:.3f}")
