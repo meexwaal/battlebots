@@ -431,13 +431,27 @@ void loop() {
 
     nav_state.step();
     const float theta = -nav_state.theta;
-    led_vector(cos(theta), sin(theta));
+    const float px = cos(theta);
+    const float py = sin(theta);
+    led_vector(px, py);
 
     const size_t uptime = millis() - start_millis;
 
-    if (uptime > 4000 && uptime < 30000) {
-        const float spin_speed = map_float(pulse_widths[0], 1000, 2000, -0.08, 0.08);
-        set_motors(spin_speed, spin_speed);
+    if (uptime > 4000 && uptime < 60000) {
+        constexpr float max_speed = 0.08;
+        const float spin_speed = map_float(pulse_widths[0], 1000, 2000, -max_speed, max_speed);
+        const float north_speed = map_float(pulse_widths[1], 1000, 2000, -1, 1);
+        const float east_speed = map_float(pulse_widths[2], 1000, 2000, 1, -1);
+
+        const float total_speed = std::sqrt(north_speed * north_speed + east_speed * east_speed);
+        const float dot = px * east_speed + py * north_speed;
+
+        float left_bias = total_speed * 0.5;
+        if (dot < 0) {
+            left_bias *= -1;
+        }
+
+        set_motors(spin_speed * (1 + left_bias), spin_speed * (1 - left_bias));
     } else {
         set_motors(0, 0);
     }

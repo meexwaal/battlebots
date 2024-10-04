@@ -1,0 +1,19 @@
+hardware
+* better wheels
+* better wheel attachment
+* tape wires down / connect batteries
+* [optional] portable test box
+
+software
+* fix gyroscope crash
+* measure rotation rate with accelerometer
+* more robust pwm reading
+* filtering on lidar
+* measure rotation rate with lidar
+* signal LED
+* web server/telemetry logging
+
+backlog
+* program esc to go backwards
+* better esc/receiver protocol
+* autonomous??
