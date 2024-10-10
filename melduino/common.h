@@ -5,9 +5,18 @@ namespace melty {
     // Global pin assignments
     namespace pins {
         // UART uses 0, 1
+
+        // Radio receiver
+        static constexpr int ch1_spin = 2;
+        static constexpr int ch3_north_south = 3;
+        static constexpr int ch4_east_west = 8;
+
+        // ESC control
         static constexpr int left_motor = 9;
         static constexpr int right_motor = 10;
+
         static constexpr int status_led = 13; // aka LED_BUILTIN
+
         // I2C uses 14, 15 (shared with A4, A5)
     }
 

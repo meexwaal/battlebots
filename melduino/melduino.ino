@@ -122,14 +122,15 @@ namespace melty {
       return true;
     }
 
-    #define SPIN_CH1_PIN 2
-    #define NS_CH3_PIN 3
-    #define EW_CH4_PIN 8
-
+    // PWM measurements for each receiver channel
     volatile long start_times[3] = {};
     volatile long current_times[3] = {};
     volatile long pulses[3] = {};
     volatile int pulse_widths[3] = {};
+
+    // After this much time without a pulse, consider the channel invalid
+    // TODO: log when this happens
+    constexpr long pwm_stale_time_us = 40000; // 25 Hz, some margin on the expected 50 Hz
 
     template <int idx>
     void measure_pwm() {
@@ -215,9 +216,9 @@ namespace melty {
 using namespace melty;
 
 void setup() {
-    pinMode(SPIN_CH1_PIN, INPUT_PULLUP);
-    pinMode(NS_CH3_PIN, INPUT_PULLUP);
-    pinMode(EW_CH4_PIN, INPUT_PULLUP);
+    pinMode(pins::ch1_spin, INPUT_PULLUP);
+    pinMode(pins::ch3_north_south, INPUT_PULLUP);
+    pinMode(pins::ch4_east_west, INPUT_PULLUP);
 
     pinMode(pins::status_led, OUTPUT);
     digitalWrite(pins::status_led, HIGH);
@@ -247,9 +248,9 @@ void setup() {
     /*  * also: period(int ms), pulseWidth(int ms), same with _us suffix */
     /*  *\/ */
 
-    attachInterrupt(digitalPinToInterrupt(SPIN_CH1_PIN), measure_pwm<0>, CHANGE);
-    attachInterrupt(digitalPinToInterrupt(NS_CH3_PIN), measure_pwm<1>, CHANGE);
-    attachInterrupt(digitalPinToInterrupt(EW_CH4_PIN), measure_pwm<2>, CHANGE);
+    attachInterrupt(digitalPinToInterrupt(pins::ch1_spin), measure_pwm<0>, CHANGE);
+    attachInterrupt(digitalPinToInterrupt(pins::ch3_north_south), measure_pwm<1>, CHANGE);
+    attachInterrupt(digitalPinToInterrupt(pins::ch4_east_west), measure_pwm<2>, CHANGE);
 
     // Lidar
     led_print(led_msg::init | led_msg::lidar);
@@ -322,15 +323,15 @@ void loop() {
     cycle_count++;
     sleep_until_cycle_start();
 
-    Serial.print("SPIN_PIN:");
-    Serial.print(pulse_widths[0]);
-    Serial.print(",");
-    Serial.print("NS_PIN:");
-    Serial.print(pulse_widths[1]);
-    Serial.print(",");
-    Serial.print("EW_PIN:");
-    Serial.print(pulse_widths[2]);
-    Serial.println();
+    /* Serial.print("SPIN_PIN:"); */
+    /* Serial.print(pulse_widths[0]); */
+    /* Serial.print(","); */
+    /* Serial.print("NS_PIN:"); */
+    /* Serial.print(pulse_widths[1]); */
+    /* Serial.print(","); */
+    /* Serial.print("EW_PIN:"); */
+    /* Serial.print(pulse_widths[2]); */
+    /* Serial.println(); */
 
     /* int max_reads = 1000; */
     /* if (has_lidar) { */
@@ -440,10 +441,25 @@ void loop() {
     const size_t uptime = millis() - start_millis;
 
     if (uptime > 4000 && uptime < 60000) {
-        constexpr float max_speed = 0.08;
-        const float spin_speed = map_float(pulse_widths[0], 1000, 2000, -max_speed, max_speed);
-        const float north_speed = map_float(pulse_widths[1], 1000, 2000, -1, 1);
-        const float east_speed = map_float(pulse_widths[2], 1000, 2000, 1, -1);
+        const long now_us = micros();
+
+        constexpr float full_speed = 0.08;
+        float spin_speed = map_float(pulse_widths[0], 1000, 2000, -full_speed, full_speed);
+        float north_speed = map_float(pulse_widths[1], 1000, 2000, -1, 1);
+        float east_speed = map_float(pulse_widths[2], 1000, 2000, 1, -1);
+
+        if (now_us - current_times[0] > pwm_stale_time_us) {
+            Serial.println("Spin speed pwm stale");
+            spin_speed = 0;
+        }
+        if (now_us - current_times[1] > pwm_stale_time_us) {
+            Serial.println("North speed pwm stale");
+            north_speed = 0;
+        }
+        if (now_us - current_times[2] > pwm_stale_time_us) {
+            Serial.println("East speed pwm stale");
+            east_speed = 0;
+        }
 
         const float total_speed = std::sqrt(north_speed * north_speed + east_speed * east_speed);
         const float dot = px * east_speed + py * north_speed;
