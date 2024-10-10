@@ -182,6 +182,8 @@ namespace melty {
         /* } */
 
         telem_packet.theta = nav_state.theta;
+        telem_packet.gyro_w = nav_state.gyro_w;
+        telem_packet.accel_w = nav_state.accel_w;
         telem_packet.packet_count = packet_count;
         telem_packet.late_wakeup_count = late_wakeup_count;
         telem_packet.skipped_cycle_count = skipped_cycle_count;
@@ -281,7 +283,7 @@ void setup() {
 
 
     // Nav sensors, IMU
-    // led_print(led_msg::init | led_msg::nav); todo
+    led_print(led_msg::init | led_msg::nav);
     const bool has_nav = nav_state.init();
     if (!has_nav) {
         Serial.println("Nav init failure");
@@ -308,7 +310,7 @@ void setup() {
         end_msg |= led_msg::no | led_msg::lidar;
     }
     if (!has_nav) {
-        /* end_msg |= led_msg::no | led_msg::nav; */ // todo
+        end_msg |= led_msg::no | led_msg::nav;
     }
     led_print(end_msg);
 

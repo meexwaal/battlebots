@@ -12,7 +12,7 @@ with open('protocol.h', 'r') as protocol_file:
     ffi.cdef(protocol_file.read())
 
 ServerSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-# ServerSocket.settimeout(1)
+#ServerSocket.settimeout(1)
 host = '0.0.0.0'
 port = 2390
 
@@ -61,9 +61,16 @@ def animate(save=False):
 
             theta = telem_struct.theta
             rs = np.array(list(telem_struct.lidar_mm)) / 1e3
+
+            gyro_w = telem_struct.gyro_w
+            accel_w = telem_struct.accel_w
+
+            print(telem_struct)
         except socket.timeout:
             theta = np.random.rand()
             rs = [np.random.rand()] * 16
+            gyro_w = np.random.rand()
+            accel_w = np.random.rand()
 
         # while theta + np.pi < prev_theta:
         #     theta += 2 * np.pi
@@ -74,12 +81,12 @@ def animate(save=False):
         #     theta -= 2 * np.pi
         #     prev_theta -= 2 * np.pi
 
-        # thetas = np.linspace(theta, prev_theta, num=16, endpoint=False)[::-1]
-        dtheta = np.diff(np.unwrap([prev_theta, theta]))[0]
-        now = time.time()
-        dt = now - prev_time
-        prev_theta = theta
-        prev_time = now
+        # # thetas = np.linspace(theta, prev_theta, num=16, endpoint=False)[::-1]
+        # dtheta = np.diff(np.unwrap([prev_theta, theta]))[0]
+        # now = time.time()
+        # dt = now - prev_time
+        # prev_theta = theta
+        # prev_time = now
 
         # Plot measured theta
         orientation.set_data(
@@ -87,9 +94,12 @@ def animate(save=False):
             [1.1 * bot_radius * np.sin(theta)])
 
         # Show rotation speed
-        rps = dtheta / dt / (2 * np.pi)
-        rpm = rps * 60
-        plot_text.set_text(f"{rps:.2f} rps, {rpm:.0f} rpm")
+        gyro_rps = gyro_w / (2 * np.pi)
+        accel_rps = accel_w / (2 * np.pi)
+        lines = [
+            f"Gyro: {gyro_rps:.2f} rps, {gyro_rps * 60:.0f} rpm",
+            f"Accel: {accel_rps:.2f} rps, {accel_rps * 60:.0f} rpm"]
+        plot_text.set_text('\n'.join(lines))
 
         # plot_lidar.set_data(rs * np.cos(thetas), rs * np.sin(thetas))
         plot_lidar_xy[:-1,:] = plot_lidar_xy[1:,:]
