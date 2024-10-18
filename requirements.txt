@@ -2,3 +2,4 @@ dataclasses
 numpy
 matplotlib
 cffi
+pandas
