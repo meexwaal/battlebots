@@ -43,11 +43,11 @@ class PacketHandler:
         # via `packet.lidar_mm` etc.
         self.received_packet_count += 1
 
-        print(f"{datetime.datetime.now().strftime("%H:%M:%S")}: {packet.lidar_mm[0]}")
+        print(f"{datetime.datetime.now().strftime('%H:%M:%S')}: {packet.lidar_mm[0]}")
 
         # lidar.mm is a size X array that houses the last X lidar measurements.
         for lidar_value in packet.lidar_mm:
-            if lidar_value == -2:
+            if lidar_value != -2:
                 # Sentinel value reserved to tell us lidar didn't give us this
                 self.data["lidar_mm"].append(lidar_value)
 
@@ -59,7 +59,7 @@ class PacketHandler:
 
         self.processed_packet_count += 1
 
-        # self.export_to_csv()
+        self.export_to_csv()
 
         self.clear_data()
 
