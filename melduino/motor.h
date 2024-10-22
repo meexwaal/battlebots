@@ -45,6 +45,7 @@ namespace melty {
      */
     void set_motors(float left, float right) {
         constexpr float speed_limit = 0.12f; // TODO: remove limit
+        /* constexpr float speed_limit = 1.0f; */
 
         if (left < 0.0f || left > 1.0f) {
             Serial.print("Error: bad left motor speed: ");

@@ -65,7 +65,9 @@ def animate(save=False):
             gyro_w = telem_struct.gyro_w
             accel_w = telem_struct.accel_w
 
-            print(telem_struct)
+            for field in dir(telem_struct):
+                print(f"{field}:\t{getattr(telem_struct, field)}")
+            print()
         except socket.timeout:
             theta = np.random.rand()
             rs = [np.random.rand()] * 16

@@ -6,10 +6,12 @@
  *  - Adafruit LIS331 (1.0.6)
  *  - ArduinoGraphics (1.1.3)
  *
- * I also had to modify
+ * I also modified:
  * ~/.arduino15/packages/arduino/hardware/renesas_uno/1.2.0/cores/arduino/IRQManager.cpp
- * to set UART_SCI_PRIORITY = 6, less than TIMER_PRIORITY, so that Serial can interrupt our
- * timer-driver fast loop.
+ *   to set UART_SCI_PRIORITY = 6, less than TIMER_PRIORITY, so that Serial can interrupt our
+ *   timer-driver fast loop.
+ * ~/.arduino15/packages/arduino/hardware/renesas_uno/1.2.0/platform.txt
+ *   to set compiler.optimization_flags=-O2 and compiler.optimization_flags.release=-O2
  * TODO: set up a timer interrupt with lower priority in a less hacky way.
  */
 
@@ -42,7 +44,8 @@ namespace melty {
     volatile size_t max_period = 0;
     volatile size_t max_duration = 0;
 
-    volatile size_t lidar_idx = 0;
+    volatile size_t write_lidar_idx = 0;
+    volatile size_t read_lidar_idx = 0;
     std::array<volatile uint16_t, 1024> dists;
 
     size_t start_millis = 0;
@@ -78,10 +81,10 @@ namespace melty {
                 }
                 lidar_count++;
 
-                dists[lidar_idx] = m;
-                lidar_idx++;
-                if (lidar_idx >= dists.size()) {
-                    lidar_idx = 0;
+                dists[write_lidar_idx] = m;
+                write_lidar_idx++;
+                if (write_lidar_idx >= dists.size()) {
+                    write_lidar_idx = 0;
                 }
             }
         }
@@ -162,25 +165,26 @@ namespace melty {
 
     telem_packet_t telem_packet;
 
-    IPAddress dest_addr{192,168,4,2};
+    IPAddress dest_addr{192,168,4,255};
 
     int packet_count = 0;
     void telemeter() {
-        /* constexpr size_t n_points = 16; */
-        /* constexpr size_t downsample = 2; */
-        /* int next_idx = lidar_idx - (n_points - 1) * downsample; */
-        int next_idx = lidar_idx - 1;
-        if (next_idx < 0) {
-            next_idx += dists.size();
+        constexpr size_t n_points = 16;
+        /* telem_packet.lidar_mm[0] = dists[next_idx]; */
+
+        bool no_more_samples = false;
+        for (size_t i = 0; i < n_points; i++) {
+            if (no_more_samples || read_lidar_idx == write_lidar_idx) {
+                no_more_samples = true;
+                telem_packet.lidar_mm[i] = -2;
+            } else {
+                telem_packet.lidar_mm[i] = dists[read_lidar_idx];
+                read_lidar_idx++;
+                if (read_lidar_idx >= dists.size()) {
+                    read_lidar_idx -= dists.size();
+                }
+            }
         }
-        telem_packet.lidar_mm[0] = dists[next_idx];
-        /* for (size_t i = 0; i < n_points; i++) { */
-        /*     telem_packet.lidar_mm[i] = dists[next_idx]; */
-        /*     next_idx += downsample; */
-        /*     if (next_idx >= dists.size()) { */
-        /*         next_idx -= dists.size(); */
-        /*     } */
-        /* } */
 
         telem_packet.theta = nav_state.theta;
         telem_packet.gyro_w = nav_state.gyro_w;
@@ -444,22 +448,33 @@ void loop() {
         const long now_us = micros();
 
         constexpr float full_speed = 0.08;
+        /* constexpr float full_speed = 1.0f; */
         float spin_speed = map_float(pulse_widths[0], 1000, 2000, -full_speed, full_speed);
         float north_speed = map_float(pulse_widths[1], 1000, 2000, -1, 1);
         float east_speed = map_float(pulse_widths[2], 1000, 2000, 1, -1);
 
+        bool stale = false;
+        static bool prev_stale = true;
+        // TODO: when receiver stops getting signal, it sends 1500.
+        // This should use the same logic, so a failure anywhere in the chain has the same response.
+        // Also, add sanity check on the value, because even invalid values persist for short times.
+
         if (now_us - current_times[0] > pwm_stale_time_us) {
-            Serial.println("Spin speed pwm stale");
             spin_speed = 0;
+            stale = true;
         }
         if (now_us - current_times[1] > pwm_stale_time_us) {
-            Serial.println("North speed pwm stale");
             north_speed = 0;
+            stale = true;
         }
         if (now_us - current_times[2] > pwm_stale_time_us) {
-            Serial.println("East speed pwm stale");
             east_speed = 0;
+            stale = true;
         }
+        if (stale && !prev_stale) {
+            Serial.println("PWM went stale");
+        }
+        prev_stale = stale;
 
         const float total_speed = std::sqrt(north_speed * north_speed + east_speed * east_speed);
         const float dot = px * east_speed + py * north_speed;
