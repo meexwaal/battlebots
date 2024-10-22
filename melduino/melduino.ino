@@ -8,10 +8,12 @@
  *
  * I also modified:
  * ~/.arduino15/packages/arduino/hardware/renesas_uno/1.2.0/cores/arduino/IRQManager.cpp
- *   to set UART_SCI_PRIORITY = 6, less than TIMER_PRIORITY, so that Serial can interrupt our
+ *   Set UART_SCI_PRIORITY = 6, less than TIMER_PRIORITY, so that Serial can interrupt our
  *   timer-driver fast loop.
+ *   Set I2C_MASTER/SLAVE_PRIORITY, less than UART or TIMER, so that the I2C gyro doesn't
+ *   crash.
  * ~/.arduino15/packages/arduino/hardware/renesas_uno/1.2.0/platform.txt
- *   to set compiler.optimization_flags=-O2 and compiler.optimization_flags.release=-O2
+ *   Set compiler.optimization_flags=-O2 and compiler.optimization_flags.release=-O2
  * TODO: set up a timer interrupt with lower priority in a less hacky way.
  */
 

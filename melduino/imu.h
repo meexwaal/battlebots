@@ -135,7 +135,9 @@ namespace melty {
             const uint32_t dt = t - prev_t;
 
             icm_measure();
+            delay(1);
             lis_measure();
+            delay(1);
 
             gyro_w = icm_gyro.gyro.z;
             accel_w = std::sqrt(lis_accel.acceleration.y / accel_radius);
