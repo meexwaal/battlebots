@@ -130,10 +130,17 @@ namespace melty {
             return icm_ok && lis_ok;
         }
 
-        void step() {
+        void step_theta() {
             const uint32_t t = micros();
             const uint32_t dt = t - prev_t;
 
+            theta += (dt * 1e-6) * gyro_w;
+            theta = std::fmod(theta, 2.0 * M_PI);
+
+            prev_t = t;
+        }
+
+        void step_sensors() {
             icm_measure();
             delay(1);
             lis_measure();
@@ -141,11 +148,6 @@ namespace melty {
 
             gyro_w = icm_gyro.gyro.z;
             accel_w = std::sqrt(lis_accel.acceleration.y / accel_radius);
-
-            theta += (dt * 1e-6) * gyro_w;
-            theta = std::fmod(theta, 2.0 * M_PI);
-
-            prev_t = t;
         }
 
 

@@ -11,6 +11,10 @@ namespace melty {
         static constexpr int ch3_north_south = 3;
         static constexpr int ch4_east_west = 8;
 
+        // Indicator LED
+        static constexpr int led_blue = 7;
+        static constexpr int led_green = 12;
+
         // ESC control
         static constexpr int left_motor = 9;
         static constexpr int right_motor = 10;

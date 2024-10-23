@@ -35,19 +35,24 @@ namespace melty {
     PwmOut pwm(D2);
     NavState nav_state{};
 
-    volatile bool has_lidar = false;
-    volatile bool has_accel = false;
-    volatile bool has_gyro = false;
-    volatile bool has_wifi = false;
+    struct {
+        volatile bool has_lidar = false;
+        bool has_wifi = false;
 
-    volatile size_t isr_count = 0;
+        volatile size_t isr_count = 0;
 
-    volatile size_t last_start = 0;
-    volatile size_t max_period = 0;
-    volatile size_t max_duration = 0;
+        volatile size_t last_start = 0;
+        volatile size_t max_period = 0;
+        volatile size_t max_duration = 0;
 
-    volatile size_t write_lidar_idx = 0;
-    volatile size_t read_lidar_idx = 0;
+        volatile size_t write_lidar_idx = 0;
+        volatile size_t read_lidar_idx = 0;
+
+        volatile float total_speed = 0;
+        volatile float px = 0;
+        volatile float py = 0;
+    } state;
+
     std::array<volatile uint16_t, 1024> dists;
 
     size_t start_millis = 0;
@@ -60,20 +65,37 @@ namespace melty {
     template <typename unused_t>
     void isr(unused_t unused) {
         const size_t start = micros();
-        const size_t period = start - last_start;
-        last_start = start;
-        if (period > max_period) {
-            max_period = period;
+        const size_t period = start - state.last_start;
+        state.last_start = start;
+        if (period > state.max_period) {
+            state.max_period = period;
         }
 
         // Blink the light to show that ISR is running
-        digitalWrite(pins::status_led, (isr_count & (1 << 6)) == 0);
+        digitalWrite(pins::status_led, (state.isr_count & (1 << 6)) == 0);
 
-        isr_count++;
+        state.isr_count++;
         // delayMicroseconds(100);
 
+        nav_state.step_theta();
+        const float theta = -nav_state.theta;
+        state.px = cos(theta);
+        state.py = sin(theta);
+
+        constexpr float led_x = 9.8 / 10.51; // std::sqrt(9.8 * 9.8 + 3.8 * 3.8);
+        constexpr float led_y = 3.8 / 10.51;
+        constexpr float threshold = 0.996194698; // cos(5 deg)
+
+        const float led_theta_dot = state.px * led_x + state.py * led_y;
+        /* const float led_cmd_dot = north_speed * led_x + east_speed * led_y; */
+
+        digitalWrite(pins::led_green, led_theta_dot > threshold);
+        /* digitalWrite(pins::led_blue, */
+        /*              state.total_speed > 0.02 && */
+        /*              led_cmd_dot > threshold * state.total_speed); */
+
         int max_reads = 5;
-        if (has_lidar) {
+        if (state.has_lidar) {
             while (max_reads > 0 && Serial1.available() >= 9) {
                 max_reads--;
                 uint16_t m = -1;
@@ -83,17 +105,17 @@ namespace melty {
                 }
                 lidar_count++;
 
-                dists[write_lidar_idx] = m;
-                write_lidar_idx++;
-                if (write_lidar_idx >= dists.size()) {
-                    write_lidar_idx = 0;
+                dists[state.write_lidar_idx] = m;
+                state.write_lidar_idx++;
+                if (state.write_lidar_idx >= dists.size()) {
+                    state.write_lidar_idx = 0;
                 }
             }
         }
 
         const size_t duration = micros() - start;
-        if (duration > max_duration) {
-            max_duration = duration;
+        if (duration > state.max_duration) {
+            state.max_duration = duration;
         }
     }
 
@@ -176,14 +198,14 @@ namespace melty {
 
         bool no_more_samples = false;
         for (size_t i = 0; i < n_points; i++) {
-            if (no_more_samples || read_lidar_idx == write_lidar_idx) {
+            if (no_more_samples || state.read_lidar_idx == state.write_lidar_idx) {
                 no_more_samples = true;
                 telem_packet.lidar_mm[i] = -2;
             } else {
-                telem_packet.lidar_mm[i] = dists[read_lidar_idx];
-                read_lidar_idx++;
-                if (read_lidar_idx >= dists.size()) {
-                    read_lidar_idx -= dists.size();
+                telem_packet.lidar_mm[i] = dists[state.read_lidar_idx];
+                state.read_lidar_idx++;
+                if (state.read_lidar_idx >= dists.size()) {
+                    state.read_lidar_idx -= dists.size();
                 }
             }
         }
@@ -226,6 +248,8 @@ void setup() {
     pinMode(pins::ch3_north_south, INPUT_PULLUP);
     pinMode(pins::ch4_east_west, INPUT_PULLUP);
 
+    pinMode(pins::led_blue, OUTPUT);
+    pinMode(pins::led_green, OUTPUT);
     pinMode(pins::status_led, OUTPUT);
     digitalWrite(pins::status_led, HIGH);
 
@@ -236,8 +260,8 @@ void setup() {
 
     // WiFi
     led_print(led_msg::init | led_msg::wifi);
-    has_wifi = wifiSetup();
-    if (!has_wifi) {
+    state.has_wifi = wifiSetup();
+    if (!state.has_wifi) {
         Serial.println("WiFi failed to init");
     }
 
@@ -279,9 +303,9 @@ void setup() {
             lidarStartScan()
             )) {
         Serial.println("Lidar failed to init");
-        has_lidar = false;
+        state.has_lidar = false;
     } else {
-        has_lidar = true;
+        state.has_lidar = true;
     }
 
     for (size_t i = 0; i < sizeof(telem_packet.lidar_mm) / sizeof(telem_packet.lidar_mm[0]); i++) {
@@ -307,13 +331,13 @@ void setup() {
 
     // Put some status on the LED matrix to show what failed init
     Frame end_msg(led_msg::empty);
-    if (!has_wifi) {
+    if (!state.has_wifi) {
         end_msg |= led_msg::no | led_msg::wifi;
     }
     if (!has_good_motors) {
         end_msg |= led_msg::no | led_msg::motor;
     }
-    if (!has_lidar) {
+    if (!state.has_lidar) {
         end_msg |= led_msg::no | led_msg::lidar;
     }
     if (!has_nav) {
@@ -339,22 +363,6 @@ void loop() {
     /* Serial.print(pulse_widths[2]); */
     /* Serial.println(); */
 
-    /* int max_reads = 1000; */
-    /* if (has_lidar) { */
-    /*     while (max_reads > 0 && Serial1.available() >= 9) { */
-    /*         max_reads--; */
-    /*         uint16_t m = -1; */
-    /*         const bool success = lidarMeasure(m); */
-    /*         if (success) { */
-    /*             dists[lidar_idx] = m; */
-    /*             lidar_idx++; */
-    /*             if (lidar_idx >= dists.size()) { */
-    /*                 lidar_idx = 0; */
-    /*             } */
-    /*         } */
-    /*     } */
-    /* } */
-
 
     /* Serial.println(""); */
     /* Serial.print("Cycle #        : "); */
@@ -365,11 +373,11 @@ void loop() {
     /* Serial.println(skipped_cycle_count); */
 
     /* Serial.print("Max ISR period : "); */
-    /* Serial.println(max_period); */
-    /* max_period = 0; */
+    /* Serial.println(state.max_period); */
+    /* state.max_period = 0; */
     /* Serial.print("Max ISR dur.   : "); */
-    /* Serial.println(max_duration); */
-    /* max_duration = 0; */
+    /* Serial.println(state.max_duration); */
+    /* state.max_duration = 0; */
 
     /* for (int i = 0; i < 8; i++) { */
     /*     Serial.println(telem_packet.lidar_mm[i]); */
@@ -392,12 +400,6 @@ void loop() {
     /* Serial.println(mean); */
     /* Serial.print("std  "); */
     /* Serial.println(std); */
-
-    /* Serial.print("lidar_idx "); */
-    /* Serial.println(lidar_idx); */
-    /* for (int i = 0; i < lidar_idx; i++) { */
-    /*     Serial.println(dists[i]); */
-    /* } */
 
     /* printlog(); */
 
@@ -435,63 +437,60 @@ void loop() {
     prev_lidar_idx = new_lidar_idx;
 
     Serial.print("ISR rate Hz ");
-    Serial.println(1000.0 * isr_count / (millis() - start_millis));
+    Serial.println(1000.0 * state.isr_count / (millis() - start_millis));
     */
 
-    nav_state.step();
-    const float theta = -nav_state.theta;
-    const float px = cos(theta);
-    const float py = sin(theta);
-    led_vector(px, py);
+    nav_state.step_sensors();
+    led_vector(state.px, state.py);
 
     const size_t uptime = millis() - start_millis;
 
-    if (uptime > 4000 && uptime < 60000) {
-        const long now_us = micros();
+    const long now_us = micros();
 
-        constexpr float full_speed = 0.08;
-        /* constexpr float full_speed = 1.0f; */
-        float spin_speed = map_float(pulse_widths[0], 1000, 2000, -full_speed, full_speed);
-        float north_speed = map_float(pulse_widths[1], 1000, 2000, -1, 1);
-        float east_speed = map_float(pulse_widths[2], 1000, 2000, 1, -1);
+    constexpr float full_speed = 0.08;
+    /* constexpr float full_speed = 1.0f; */
+    float spin_speed = map_float(pulse_widths[0], 1000, 2000, -full_speed, full_speed);
+    float north_speed = map_float(pulse_widths[1], 1000, 2000, -1, 1);
+    float east_speed = map_float(pulse_widths[2], 1000, 2000, 1, -1);
 
-        bool stale = false;
-        static bool prev_stale = true;
-        // TODO: when receiver stops getting signal, it sends 1500.
-        // This should use the same logic, so a failure anywhere in the chain has the same response.
-        // Also, add sanity check on the value, because even invalid values persist for short times.
+    bool stale = false;
+    static bool prev_stale = true;
+    // TODO: when receiver stops getting signal, it sends 1500.
+    // This should use the same logic, so a failure anywhere in the chain has the same response.
+    // Also, add sanity check on the value, because even invalid values persist for short times.
 
-        if (now_us - current_times[0] > pwm_stale_time_us) {
-            spin_speed = 0;
-            stale = true;
-        }
-        if (now_us - current_times[1] > pwm_stale_time_us) {
-            north_speed = 0;
-            stale = true;
-        }
-        if (now_us - current_times[2] > pwm_stale_time_us) {
-            east_speed = 0;
-            stale = true;
-        }
-        if (stale && !prev_stale) {
-            Serial.println("PWM went stale");
-        }
-        prev_stale = stale;
+    if (now_us - current_times[0] > pwm_stale_time_us) {
+        spin_speed = 0;
+        stale = true;
+    }
+    if (now_us - current_times[1] > pwm_stale_time_us) {
+        north_speed = 0;
+        stale = true;
+    }
+    if (now_us - current_times[2] > pwm_stale_time_us) {
+        east_speed = 0;
+        stale = true;
+    }
+    if (stale && !prev_stale) {
+        Serial.println("PWM went stale");
+    }
+    prev_stale = stale;
 
-        const float total_speed = std::sqrt(north_speed * north_speed + east_speed * east_speed);
-        const float dot = px * east_speed + py * north_speed;
+    state.total_speed = std::sqrt(north_speed * north_speed + east_speed * east_speed);
+    const float dot = state.px * east_speed + state.py * north_speed;
 
-        float left_bias = total_speed * 0.5;
-        if (dot < 0) {
-            left_bias *= -1;
-        }
+    float left_bias = state.total_speed * 0.5;
+    if (dot < 0) {
+        left_bias *= -1;
+    }
 
+    if (uptime < 60000) {
         set_motors(spin_speed * (1 + left_bias), spin_speed * (1 - left_bias));
     } else {
         set_motors(0, 0);
     }
 
-    if (has_wifi) {
+    if (state.has_wifi) {
         telemeter();
     }
 }
