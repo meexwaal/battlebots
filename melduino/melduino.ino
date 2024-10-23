@@ -49,9 +49,15 @@ namespace melty {
         volatile size_t read_lidar_idx = 0;
 
         volatile float total_speed = 0;
+        volatile float led_cmd_x = 0;
+        volatile float led_cmd_y = 0;
         volatile float px = 0;
         volatile float py = 0;
     } state;
+
+    // Values of px,py when the LED should turn on (points north)
+    constexpr float led_x = -3.8 / 10.51; // std::sqrt(9.8 * 9.8 + 3.8 * 3.8);
+    constexpr float led_y = -9.8 / 10.51;
 
     std::array<volatile uint16_t, 1024> dists;
 
@@ -78,21 +84,19 @@ namespace melty {
         // delayMicroseconds(100);
 
         nav_state.step_theta();
-        const float theta = -nav_state.theta;
+        const float theta = nav_state.theta;
         state.px = cos(theta);
         state.py = sin(theta);
 
-        constexpr float led_x = 9.8 / 10.51; // std::sqrt(9.8 * 9.8 + 3.8 * 3.8);
-        constexpr float led_y = 3.8 / 10.51;
         constexpr float threshold = 0.996194698; // cos(5 deg)
 
         const float led_theta_dot = state.px * led_x + state.py * led_y;
-        /* const float led_cmd_dot = north_speed * led_x + east_speed * led_y; */
+        const float led_cmd_dot = state.px * state.led_cmd_x + state.py * state.led_cmd_y;
 
         digitalWrite(pins::led_green, led_theta_dot > threshold);
-        /* digitalWrite(pins::led_blue, */
-        /*              state.total_speed > 0.02 && */
-        /*              led_cmd_dot > threshold * state.total_speed); */
+        digitalWrite(pins::led_blue,
+                     state.total_speed > 0.02 &&
+                     led_cmd_dot > threshold * state.total_speed);
 
         int max_reads = 5;
         if (state.has_lidar) {
@@ -450,7 +454,7 @@ void loop() {
     constexpr float full_speed = 0.08;
     /* constexpr float full_speed = 1.0f; */
     float spin_speed = map_float(pulse_widths[0], 1000, 2000, -full_speed, full_speed);
-    float north_speed = map_float(pulse_widths[1], 1000, 2000, -1, 1);
+    float north_speed = map_float(pulse_widths[1], 1000, 2000, 1, -1);
     float east_speed = map_float(pulse_widths[2], 1000, 2000, 1, -1);
 
     bool stale = false;
@@ -477,10 +481,20 @@ void loop() {
     prev_stale = stale;
 
     state.total_speed = std::sqrt(north_speed * north_speed + east_speed * east_speed);
+
+    // To get the vector for LED commanding, first rotate the position from the
+    // controller by 90 deg so that north (the direction that led_x/y indicates)
+    // becomes (1, 0). Then, rotate led_x/y by that vector's angle, to get the
+    // vector used to indicate the controller's direction.
+    const float nx = north_speed;
+    const float ny = -east_speed;
+    state.led_cmd_x = nx * led_x - ny * led_y;
+    state.led_cmd_y = nx * led_y + ny * led_x;
+
     const float dot = state.px * east_speed + state.py * north_speed;
 
     float left_bias = state.total_speed * 0.5;
-    if (dot < 0) {
+    if (dot > 0) {
         left_bias *= -1;
     }
 
