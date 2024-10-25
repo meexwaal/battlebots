@@ -44,7 +44,20 @@ namespace melty {
      * Arduino's map, with floats.
      * https://www.arduino.cc/reference/en/language/functions/math/map/
      */
-    float map_float(float x, float in_min, float in_max, float out_min, float out_max) {
+    inline float map_float(
+        const float x,
+        const float in_min,
+        const float in_max,
+        const float out_min,
+        const float out_max
+    ) {
         return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+    }
+
+    /*
+     * Dot product
+     */
+    inline float dot(const float ax, const float ay, const float bx, const float by) {
+        return ax * bx + ay * by;
     }
 }

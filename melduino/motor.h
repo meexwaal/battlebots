@@ -8,6 +8,7 @@ namespace melty {
     static constexpr size_t min_pulse_us = 1266;
     static constexpr size_t max_pulse_us = 1678;
 
+    // TODO: refactor in terms of +Y and -Y motor
     Servo left_motor, right_motor;
 
     bool motor_init() {

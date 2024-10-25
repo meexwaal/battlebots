@@ -48,16 +48,16 @@ namespace melty {
         volatile size_t write_lidar_idx = 0;
         volatile size_t read_lidar_idx = 0;
 
+        volatile float east_speed = 0;
+        volatile float north_speed = 0;
         volatile float total_speed = 0;
-        volatile float led_cmd_x = 0;
-        volatile float led_cmd_y = 0;
         volatile float px = 0;
         volatile float py = 0;
     } state;
 
-    // Values of px,py when the LED should turn on (points north)
-    constexpr float led_x = -3.8 / 10.51; // std::sqrt(9.8 * 9.8 + 3.8 * 3.8);
-    constexpr float led_y = -9.8 / 10.51;
+    // Position of the LED in the bot frame
+    constexpr float led_x = -9.8 / 10.51; // std::sqrt(9.8 * 9.8 + 3.8 * 3.8);
+    constexpr float led_y = -3.8 / 10.51;
 
     std::array<volatile uint16_t, 1024> dists;
 
@@ -85,17 +85,26 @@ namespace melty {
 
         nav_state.step_theta();
         const float theta = nav_state.theta;
-        state.px = cos(theta);
-        state.py = sin(theta);
+        const float px = cos(theta);
+        const float py = sin(theta);
+        state.px = px;
+        state.py = py;
 
         constexpr float threshold = 0.996194698; // cos(5 deg)
 
-        const float led_theta_dot = state.px * led_x + state.py * led_y;
-        const float led_cmd_dot = state.px * state.led_cmd_x + state.py * state.led_cmd_y;
+        // Rotate the LED vector into the arena frame (see bot_to_arena in README.md)
+        const float led_x_arena = dot(led_x, led_y, px, -py);
+        const float led_y_arena = dot(led_x, led_y, py, px);
 
-        digitalWrite(pins::led_green, led_theta_dot > threshold);
+        // Light one LED color when the LED points north, the other when the LED
+        // points towards the commanded direction.
+        const float led_north_dot = led_y_arena; // = dot(led_x_arena, led_y_arena, 0, 1)
+        const float led_cmd_dot =
+            dot(led_x_arena, led_y_arena, state.east_speed, state.north_speed);
+
+        digitalWrite(pins::led_green, led_north_dot > threshold);
         digitalWrite(pins::led_blue,
-                     state.total_speed > 0.02 &&
+                     state.total_speed > 0.05 &&
                      led_cmd_dot > threshold * state.total_speed);
 
         int max_reads = 5;
@@ -445,7 +454,11 @@ void loop() {
     */
 
     nav_state.step_sensors();
-    led_vector(state.px, state.py);
+
+    // Draw a vector that points east in the arena, which is the vector at
+    // -theta in the bot frame.
+    // v = (cos(-theta), sin(-theta)) = (cos(theta), -sin(theta)) = (px, -py)
+    led_vector(state.px, -state.py);
 
     const size_t uptime = millis() - start_millis;
 
@@ -454,8 +467,8 @@ void loop() {
     constexpr float full_speed = 0.08;
     /* constexpr float full_speed = 1.0f; */
     float spin_speed = map_float(pulse_widths[0], 1000, 2000, -full_speed, full_speed);
-    float north_speed = map_float(pulse_widths[1], 1000, 2000, 1, -1);
     float east_speed = map_float(pulse_widths[2], 1000, 2000, 1, -1);
+    float north_speed = map_float(pulse_widths[1], 1000, 2000, 1, -1);
 
     bool stale = false;
     static bool prev_stale = true;
@@ -480,21 +493,14 @@ void loop() {
     }
     prev_stale = stale;
 
-    state.total_speed = std::sqrt(north_speed * north_speed + east_speed * east_speed);
+    state.total_speed = std::sqrt(east_speed * east_speed + north_speed * north_speed);
+    state.east_speed = east_speed;
+    state.north_speed = north_speed;
 
-    // To get the vector for LED commanding, first rotate the position from the
-    // controller by 90 deg so that north (the direction that led_x/y indicates)
-    // becomes (1, 0). Then, rotate led_x/y by that vector's angle, to get the
-    // vector used to indicate the controller's direction.
-    const float nx = north_speed;
-    const float ny = -east_speed;
-    state.led_cmd_x = nx * led_x - ny * led_y;
-    state.led_cmd_y = nx * led_y + ny * led_x;
-
-    const float dot = state.px * east_speed + state.py * north_speed;
+    const float motor_dot = dot(state.px, state.py, east_speed, north_speed);
 
     float left_bias = state.total_speed * 0.5;
-    if (dot > 0) {
+    if (motor_dot > 0) {
         left_bias *= -1;
     }
 
