@@ -48,11 +48,14 @@ namespace melty {
         volatile size_t write_lidar_idx = 0;
         volatile size_t read_lidar_idx = 0;
 
+        volatile float px = 0;
+        volatile float py = 0;
+
+        volatile float spin_speed = 0;
         volatile float east_speed = 0;
         volatile float north_speed = 0;
         volatile float total_speed = 0;
-        volatile float px = 0;
-        volatile float py = 0;
+        volatile bool motor_en = false;
     } state;
 
     // Position of the LED in the bot frame
@@ -106,6 +109,19 @@ namespace melty {
         digitalWrite(pins::led_blue,
                      state.total_speed > 0.05 &&
                      led_cmd_dot > threshold * state.total_speed);
+
+        const float motor_dot = dot(px, py, state.east_speed, state.north_speed);
+
+        float left_bias = state.total_speed * 0.5;
+        if (motor_dot > 0) {
+            left_bias *= -1;
+        }
+
+        if (state.motor_en) {
+            set_motors(state.spin_speed * (1 + left_bias), state.spin_speed * (1 - left_bias));
+        } else {
+            set_motors(0, 0);
+        }
 
         int max_reads = 5;
         if (state.has_lidar) {
@@ -461,6 +477,7 @@ void loop() {
     led_vector(state.px, -state.py);
 
     const size_t uptime = millis() - start_millis;
+    state.motor_en = uptime < 60000;
 
     const long now_us = micros();
 
@@ -493,24 +510,14 @@ void loop() {
     }
     prev_stale = stale;
 
+    state.spin_speed = spin_speed;
     state.total_speed = std::sqrt(east_speed * east_speed + north_speed * north_speed);
     state.east_speed = east_speed;
     state.north_speed = north_speed;
 
-    const float motor_dot = dot(state.px, state.py, east_speed, north_speed);
-
-    float left_bias = state.total_speed * 0.5;
-    if (motor_dot > 0) {
-        left_bias *= -1;
-    }
-
-    if (uptime < 60000) {
-        set_motors(spin_speed * (1 + left_bias), spin_speed * (1 - left_bias));
-    } else {
-        set_motors(0, 0);
-    }
-
     if (state.has_wifi) {
         telemeter();
     }
+
+    // TODO: atomic state updates, because fast loop can interrupt slow loop
 }

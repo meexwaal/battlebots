@@ -44,20 +44,25 @@ namespace melty {
     /*
      * Set the motor speeds. Each can be from 0 (off) to 1 (max speed).
      */
+    template <bool verbose = false>
     void set_motors(float left, float right) {
         constexpr float speed_limit = 0.12f; // TODO: remove limit
         /* constexpr float speed_limit = 1.0f; */
 
         if (left < 0.0f || left > 1.0f) {
-            Serial.print("Error: bad left motor speed: ");
-            Serial.println(left);
+            if (verbose) {
+                Serial.print("Error: bad left motor speed: ");
+                Serial.println(left);
+            }
             left = 0.0f;
         }
         left = constrain(left, 0.0f, speed_limit);
 
         if (right < 0.0f || right > 1.0f) {
-            Serial.print("Error: bad right motor speed: ");
-            Serial.println(right);
+            if (verbose) {
+                Serial.print("Error: bad right motor speed: ");
+                Serial.println(right);
+            }
             right = 0.0f;
         }
         right = constrain(right, 0.0f, speed_limit);
