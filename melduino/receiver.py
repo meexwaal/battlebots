@@ -1,10 +1,10 @@
 import socket
-import time
 import pandas as pd
 from cffi import FFI
 import datetime
 
 MAX_PACKET_ARRAY_SIZE = 16 # lidar_mm size will usually drive this number
+XLSX_NAME = f"./umb/{datetime.datetime.now().strftime('%Y-%m-%d--%H-%M-%S')}.xlsx"
 
 # Parse protocol.h for packet format definitions
 ffi = FFI()
@@ -43,8 +43,6 @@ class PacketHandler:
         # via `packet.lidar_mm` etc.
         self.received_packet_count += 1
 
-        print(f"{datetime.datetime.now().strftime('%H:%M:%S')}: {packet.lidar_mm[0]}")
-
         # lidar.mm is a size X array that houses the last X lidar measurements.
         for lidar_value in packet.lidar_mm:
             if lidar_value != -2:
@@ -73,22 +71,30 @@ class PacketHandler:
         }
     
     def export_to_csv(self):
-        pd.DataFrame(data=self.data).to_csv("./foo.xlsx", mode="a")
+        pd.DataFrame(data=self.data).to_csv(XLSX_NAME, mode="a", header=self.received_packet_count == 1, index=False)
+
+print("Setting up Packet Handler...")
 
 packet_processor = PacketHandler()
 longest_duty_cycle = -1.0
-last_receive_time = time.time()
+last_received_datetime = datetime.datetime.now()
+
+print("Setup complete. Begin receiver loop.")
 
 while True:
+    print(f"{datetime.datetime.now().strftime('%H:%M:%S')}: Listening for next packet...")
+
     telem_packet, address = ServerSocket.recvfrom(4096)
-    
-    # Record metadata about the packets recieve rate
-    recieve_time = time.time()
-    duty_cycle = recieve_time - last_receive_time
+   
+    # Record metadata about the packets receive rate
+    receive_datetime = datetime.datetime.now()
+    print(f"{receive_datetime.strftime('%H:%M:%S')}: Packet received.")
+
+    duty_cycle = (receive_datetime - last_received_datetime).seconds
     if duty_cycle > longest_duty_cycle:
         longest_duty_cycle = duty_cycle
-        print(f"Packet recieved at {recieve_time} took longer ({duty_cycle} sec) than previous duty cycles ({longest_duty_cycle} sec).")
-    last_receive_time = recieve_time
+        print(f"This packet was received longer ({duty_cycle} sec) than previous duty cycles ({longest_duty_cycle} sec).")
+    last_received_datetime = receive_datetime
 
     packet = ffi.from_buffer("telem_packet_t *", telem_packet)
 
