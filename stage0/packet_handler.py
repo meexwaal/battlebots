@@ -26,13 +26,13 @@ class PacketHandler:
         # via `packet.lidar_mm` etc.
         self.received_packet_count += 1
 
-        self.data["timestamp"] = receive_time
-
         # lidar.mm is a size X array that houses the last X lidar measurements.
         for lidar_value in packet.lidar_mm:
             if lidar_value != -2:
                 # Sentinel value reserved to tell us lidar didn't give us this
                 self.data["lidar_mm"].append(lidar_value)
+
+        self.data["timestamp"] = [f"{receive_time}.{idx}" for idx in range(len(self.data["lidar_mm"]))]
 
         # All the other values are over-sampled in the bot but we only take the last_value in this packet.
         self.data["theta"] = [packet.theta] * len(self.data["lidar_mm"])
@@ -57,4 +57,4 @@ class PacketHandler:
         }
     
     def export_to_csv(self):
-        pd.DataFrame(data=self.data).to_csv(self.file_name, mode="a", header=self.received_packet_count == 1, index=True)
+        pd.DataFrame(data=self.data).to_csv(self.file_name, mode="a", header=self.received_packet_count == 1, index=False)
