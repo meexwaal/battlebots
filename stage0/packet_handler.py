@@ -81,6 +81,6 @@ class PacketHandler:
             if column == "lidar_mm":
                 pd.DataFrame(data={ "timestamp": self.data["timestamp"], column: self.data[column]}).to_csv(f"./umb/live/{column}", mode="a", header=self.received_packet_count == 1, index=False)
             else:
-                pd.DataFrame(data={column: self.data[column][0]}, index=[self.data["timestamp"][0].rsplit('.', 1)[0]]).to_csv(f"./umb/live/{column}", mode="a", header=self.received_packet_count == 1, index=True)
+                pd.DataFrame(data={column: self.data[column][0]}, index=[self.data["timestamp"][0].rsplit('.', 1)[0]]).to_csv(f"./umb/live/{column}", mode="a", header=self.received_packet_count == 1, index=True, index_label="timestamp")
             
         pd.DataFrame(data=self.data).to_csv(f"./umb/{self.initialization_time.strftime('%Y-%m-%d--%H-%M-%S')}.csv", mode="a", header=self.received_packet_count == 1, index=False)
