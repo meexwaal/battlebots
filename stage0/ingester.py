@@ -8,7 +8,6 @@ from datetime import datetime as dt
 from cffi import FFI
 from packet_handler import PacketHandler
 
-EVENT_FILE = f"./umb/{dt.now().strftime('%Y-%m-%d--%H-%M-%S')}.csv"
 HOST = '0.0.0.0'
 PORT = 2390
 
@@ -32,7 +31,7 @@ except socket.error as e:
 
 logger.info(f"Socket created on {HOST}:{PORT} successfully.")
 
-packet_processor = PacketHandler(EVENT_FILE)
+packet_processor = PacketHandler()
 longest_duty_cycle = -1.0
 last_received_datetime = datetime.datetime.now()
 

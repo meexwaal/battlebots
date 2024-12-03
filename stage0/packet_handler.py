@@ -1,10 +1,15 @@
 """The PacketHandler class is a generic class that represents one connection."""
 
+import os
+from datetime import datetime as dt
+
 import pandas as pd
 
 
 class PacketHandler:
-    def __init__(self, file_name:str):
+    def __init__(self):
+        self.initialization_time = dt.now()
+
         self.received_packet_count = 0
         self.processed_packet_count = 0
 
@@ -19,7 +24,15 @@ class PacketHandler:
 
         self.plotted_data = [] # Arr[{ "timestamp": datetime, "data": packet }], from earliest to latest
 
-        self.file_name = file_name
+        self._clear_live()
+
+    def _clear_live(self):
+        filename: str
+        for filename in os.listdir("./umb/live"):
+            path = os.path.join("./umb/live", filename)
+
+            if os.path.isfile(path):
+                os.remove(path)
 
     def handle_packet(self, packet, receive_time):
         # Packet is in the form of the telem_packet_t struct, and can be accessed
@@ -57,4 +70,13 @@ class PacketHandler:
         }
     
     def export_to_csv(self):
-        pd.DataFrame(data=self.data).to_csv(self.file_name, mode="a", header=self.received_packet_count == 1, index=False)
+        column: str
+        for column in self.data.columns:
+            # Each data packet gets the timestamp written.
+            if column == "timestamp":
+                # Don't export the timestamp, for obvious reasons.
+                continue
+
+            pd.DataFrame(data=self.data[["timestamp", column]]).to_csv(f"./umb/live/{column}", mode="a", header=self.received_packet_count == 1, index=False)
+            
+        pd.DataFrame(data=self.data).to_csv(f"./umb/{self.initialization_time.strftime('%Y-%m-%d--%H-%M-%S')}.csv", mode="a", header=self.received_packet_count == 1, index=False)
