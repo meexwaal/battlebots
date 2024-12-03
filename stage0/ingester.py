@@ -54,4 +54,4 @@ if __name__ == "__main__":
         packet = ffi.from_buffer("telem_packet_t *", telem_packet)
 
         # Actually handle the packet and export
-        packet_processor.handle_packet(packet, receive_time=receive_datetime.strftime('%H:%M:%S.%f'[:-3]))
+        packet_processor.handle_packet(packet, receive_time=receive_datetime.strftime('%H:%M:%S.%f'))

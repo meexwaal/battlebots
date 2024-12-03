@@ -71,12 +71,16 @@ class PacketHandler:
     
     def export_to_csv(self):
         column: str
-        for column in self.data.columns:
+        for column in self.data:
             # Each data packet gets the timestamp written.
             if column == "timestamp":
                 # Don't export the timestamp, for obvious reasons.
                 continue
 
-            pd.DataFrame(data=self.data[["timestamp", column]]).to_csv(f"./umb/live/{column}", mode="a", header=self.received_packet_count == 1, index=False)
+
+            if column == "lidar_mm":
+                pd.DataFrame(data={ "timestamp": self.data["timestamp"], column: self.data[column]}).to_csv(f"./umb/live/{column}", mode="a", header=self.received_packet_count == 1, index=False)
+            else:
+                pd.DataFrame(data={column: self.data[column][0]}, index=[self.data["timestamp"][0].rsplit('.', 1)[0]]).to_csv(f"./umb/live/{column}", mode="a", header=self.received_packet_count == 1, index=True)
             
         pd.DataFrame(data=self.data).to_csv(f"./umb/{self.initialization_time.strftime('%Y-%m-%d--%H-%M-%S')}.csv", mode="a", header=self.received_packet_count == 1, index=False)
