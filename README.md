@@ -17,13 +17,13 @@ Bot frame, `+` denotes origin.
 ```
               +Y wheel
              /
-           O         antenna
+        <- O         antenna
      .-----|-----.  /
      |           ||
      |     +     ||
      x           ||
    / '-----|-----'
-LED        O
+LED        O ->
              \
               -Y wheel
  y
@@ -74,7 +74,7 @@ directly in the desired direction of motion.
 
 To be precise, we should drive the -Y wheel faster when `p` points towards the
 desired direction `d`, i.e. when `p . d > 0`. Otherwise, drive the +Y wheel
-faster.
+faster. The bot spins counter-clockwise.
 
 *There is the exception where both wheels are rolling exactly perpendicular to
 the desired direction, i.e. `p . d = 0`.

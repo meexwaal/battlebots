@@ -1,19 +1,26 @@
 /*
  * Notes on setup:
  *
+ * Install board Arduino UNO R4 WiFi
+ *
  * Install libraries:
  *  - Adafruit ICM20X (2.0.7)
  *  - Adafruit LIS331 (1.0.6)
- *  - ArduinoGraphics (1.1.3)
+ *  - ArduinoGraphics (1.1.4)
  *
  * I also modified:
- * ~/.arduino15/packages/arduino/hardware/renesas_uno/1.2.0/cores/arduino/IRQManager.cpp
- *   Set UART_SCI_PRIORITY = 6, less than TIMER_PRIORITY, so that Serial can interrupt our
- *   timer-driver fast loop.
- *   Set I2C_MASTER/SLAVE_PRIORITY, less than UART or TIMER, so that the I2C gyro doesn't
- *   crash.
- * ~/.arduino15/packages/arduino/hardware/renesas_uno/1.2.0/platform.txt
- *   Set compiler.optimization_flags=-O2 and compiler.optimization_flags.release=-O2
+ * <Arduino path>/packages/arduino/hardware/renesas_uno/<version>/cores/arduino/IRQManager.cpp
+ *  - Set UART_SCI_PRIORITY = 6, less than TIMER_PRIORITY, so that Serial can interrupt our
+ *    timer-driver fast loop.
+ *  - Set I2C_MASTER/SLAVE_PRIORITY, less than UART or TIMER, so that the I2C gyro doesn't
+ *    crash.
+ * <Arduino path>/packages/arduino/hardware/renesas_uno/<version>/platform.txt
+ *  - Set compiler.optimization_flags=-O2 and compiler.optimization_flags.release=-O2
+ *
+ * <Arduino path> and <version> may be:
+ *  - ~/.arduino15/ and 1.2.0 on (my) linux
+ *  - ~/Library/Arduino15/ and 1.5.1 on Mac
+ *
  * TODO: set up a timer interrupt with lower priority in a less hacky way.
  */
 
@@ -73,6 +80,7 @@ namespace melty {
 
     template <typename unused_t>
     void isr(unused_t unused) {
+        // Update loop metrics
         const size_t start = micros();
         const size_t period = start - state.last_start;
         state.last_start = start;
@@ -86,6 +94,7 @@ namespace melty {
         state.isr_count++;
         // delayMicroseconds(100);
 
+        // See README.md for definitions of these quantities and coordinate frames
         nav_state.step_theta();
         const float theta = nav_state.theta;
         const float px = cos(theta);
@@ -93,7 +102,10 @@ namespace melty {
         state.px = px;
         state.py = py;
 
-        constexpr float threshold = 0.996194698; // cos(5 deg)
+        // Threshold for how close two vectors need to be to turn on an LED,
+        // when "closeness" is measured by taking the dot product between two
+        // unit vectors
+        constexpr float led_threshold = 0.996194698; // = cos(5 deg)
 
         // Rotate the LED vector into the arena frame (see bot_to_arena in README.md)
         const float led_x_arena = dot(led_x, led_y, px, -py);
@@ -105,24 +117,28 @@ namespace melty {
         const float led_cmd_dot =
             dot(led_x_arena, led_y_arena, state.east_speed, state.north_speed);
 
-        digitalWrite(pins::led_green, led_north_dot > threshold);
+        digitalWrite(pins::led_green, led_north_dot > led_threshold);
         digitalWrite(pins::led_blue,
                      state.total_speed > 0.05 &&
-                     led_cmd_dot > threshold * state.total_speed);
+                     led_cmd_dot > led_threshold * state.total_speed);
 
+        // How much to bias motor power towards the -Y motor. Magnitude is
+        // proportional to desired translation speed. Sign depends on
+        // orientation of bot relative to desired direction of motion.
+        constexpr float bias_scaling = 0.5; // Must be between 0 and 1.
+        float ny_motor_bias = state.total_speed * bias_scaling;
         const float motor_dot = dot(px, py, state.east_speed, state.north_speed);
-
-        float left_bias = state.total_speed * 0.5;
-        if (motor_dot > 0) {
-            left_bias *= -1;
+        if (motor_dot < 0) {
+            ny_motor_bias *= -1;
         }
 
         if (state.motor_en) {
-            set_motors(state.spin_speed * (1 + left_bias), state.spin_speed * (1 - left_bias));
+            set_motors(state.spin_speed * (1 - ny_motor_bias), state.spin_speed * (1 + ny_motor_bias));
         } else {
             set_motors(0, 0);
         }
 
+        // Read some points from the LIDAR sensor
         int max_reads = 5;
         if (state.has_lidar) {
             while (max_reads > 0 && Serial1.available() >= 9) {
@@ -142,6 +158,7 @@ namespace melty {
             }
         }
 
+        // Update loop metrics
         const size_t duration = micros() - start;
         if (duration > state.max_duration) {
             state.max_duration = duration;

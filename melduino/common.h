@@ -16,8 +16,8 @@ namespace melty {
         static constexpr int led_green = 12;
 
         // ESC control
-        static constexpr int left_motor = 9;
-        static constexpr int right_motor = 10;
+        static constexpr int py_motor = 9;
+        static constexpr int ny_motor = 10;
 
         static constexpr int status_led = 13; // aka LED_BUILTIN
 
